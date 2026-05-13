@@ -6,3 +6,9 @@ target/
 .vscode/
 *.orig
 *.rej
+
+# session transcripts (developer-local artifacts)
+2026-*-*.txt
+
+# regression-tests runtime state directories (per-run artifacts)
+.claude-regression/
