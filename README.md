@@ -51,12 +51,38 @@ regression-tests hook <event>    (hook entry points: preflight | pre-adversarial
 
 ## Status
 
-Currently Windows-x86_64 only. Cross-platform binaries (Linux, macOS) via GitHub Actions matrix is future work. To use, install Rust toolchain, then `cargo build --release && cp target/release/regression-tests.exe bin/`.
+Currently Windows-x86_64 only. Cross-platform binaries (Linux, macOS) via GitHub Actions matrix is future work.
 
-## Install (local dev)
+## Prerequisites
+
+For **using** the plugin (most users): the shipped `bin/regression-tests.exe` is the only requirement — no toolchain needed.
+
+For **building from source** on Windows:
+
+- **Rust toolchain** (`rustup` with `stable-x86_64-pc-windows-msvc`). Verify with `cargo --version` and `rustc --version`.
+- **MSVC C++ Build Tools** + **Windows SDK** (Visual Studio Installer → Individual Components → "Windows 11 SDK" and "MSVC v143 build tools"). Required for `link.exe` and `kernel32.lib` during `cargo build`.
+- **`rustup component add rust-analyzer`** — only if you also have the `rust-analyzer-lsp` Claude Code plugin enabled. Without this component, the rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 when the LSP starts, surfacing as `LSP server plugin:rust-analyzer-lsp:rust-analyzer crashed with exit code 1`. Installing the component is the fix; nothing in this plugin depends on it.
+
+## Install
+
+**Recommended** — via Claude plugin marketplace:
+
+```bash
+claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
+claude plugin install regression-tests@regression-tests
+```
+
+**Local dev** — point Claude Code at a checkout:
 
 ```bash
 claude --plugin-dir ~/Code/regression-tests-plugin
 ```
 
 Then invoke `/regression-tests:regression-tests` or `/regression-tests:tdd` in a Rust or C# project's git working tree.
+
+## Build from source
+
+```bash
+cargo build --release
+cp target/release/regression-tests.exe bin/regression-tests.exe
+```
