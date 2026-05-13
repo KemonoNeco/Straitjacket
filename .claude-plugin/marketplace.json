@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "regression-tests",
+  "description": "Single-plugin marketplace for the regression-tests multi-agent test workflow plugin.",
+  "owner": {
+    "name": "KemonoNeco"
+  },
+  "plugins": [
+    {
+      "name": "regression-tests",
+      "description": "Multi-agent test workflows: regression-tests (lock current behavior of code) and tdd (drive new feature development with failing-tests-first plus an implementation-author). Both skills share eleven specialist agents (coverage planning, parallel test authoring, adversarial specialist team + synthesis, mutation testing, fuzzing) and a Rust CLI `regression-tests` exposing the deterministic helpers. Supports Rust and C#.",
+      "author": {
+        "name": "KemonoNeco"
+      },
+      "category": "development",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/KemonoNeco/regression-tests-plugin.git"
+      },
+      "homepage": "https://github.com/KemonoNeco/regression-tests-plugin"
+    }
+  ]
+}
