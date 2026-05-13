@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "work-unit.schema.json",
+  "title": "WorkUnit",
+  "description": "A single test work item dispatched by the orchestrator. The Coverage Reviewer writes these; downstream agents consume and append status only. intended_behavior is write-once and serves as the alignment anchor for the Adversarial Reviewer specialists. target_stub_path is populated by the Coverage Reviewer ONLY in tdd-skill mode; it names the source file where the test-author writes a minimal unimplemented! / NotImplementedException stub so the test compiles but fails until the implementation-author writes the green-phase code.",
+  "type": "object",
+  "required": [
+    "id",
+    "target_file",
+    "target_symbol",
+    "kind",
+    "intended_behavior",
+    "output_file_path",
+    "output_test_name",
+    "status",
+    "round"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "UUID v4. Stable across rounds."
+    },
+    "target_file": {
+      "type": "string",
+      "description": "Repo-relative path to the source file under test."
+    },
+    "target_symbol": {
+      "type": "string",
+      "description": "Function/method/type being tested. Language-appropriate qualified name (e.g., Rust: Parser::parse_header; C#: Parser.ParseHeader)."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["unit", "integration"],
+      "description": "Dispatch routing. unit -> Sonnet author; integration -> Opus author."
+    },
+    "intended_behavior": {
+      "type": "string",
+      "description": "Write-once contract describing what behavior the test must verify. Written by the Coverage Reviewer; immutable thereafter. The Adversarial Reviewer specialists compare test code against this string to detect misalignment.",
+      "minLength": 10
+    },
+    "preconditions": {
+      "type": "string",
+      "description": "Setup state required for the test (e.g., 'database initialized with seed X', 'feature flag Y enabled'). May be empty."
+    },
+    "inputs": {
+      "type": "string",
+      "description": "Structured description of the inputs that exercise this behavior."
+    },
+    "expected": {
+      "type": "string",
+      "description": "Structured description of the observable outcome (return value, error type, side effect)."
+    },
+    "fuzzable": {
+      "type": "boolean",
+      "description": "If true, this target is a candidate for fuzzing. Set by the Coverage Reviewer for functions with parsing, deserialization, untrusted-input boundaries, or arithmetic on adversarial values.",
+      "default": false
+    },
+    "output_file_path": {
+      "type": "string",
+      "description": "Repo-relative path where the test will be written. Pre-assigned by the Coverage Reviewer to prevent parallel-author collisions. Rewritten by the orchestrator to staging if --dry-run is set."
+    },
+    "output_test_name": {
+      "type": "string",
+      "description": "Language-appropriate test function/method name (e.g., 'test_parse_header_rejects_truncated_input', 'ParseHeader_RejectsTruncatedInput')."
+    },
+    "target_stub_path": {
+      "type": ["string", "null"],
+      "description": "Repo-relative path to the source file where the test-author writes a minimal stub (unimplemented! / NotImplementedException) so the test compiles-but-fails. Populated ONLY by the Coverage Reviewer in tdd-skill mode; null/absent in regression-tests-skill mode (where the source already exists and no stub is needed). May equal output_file_path for in-source unit tests in Rust.",
+      "default": null
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "written",
+        "implemented",
+        "rejected_lint",
+        "quarantined",
+        "surfaced_bug"
+      ],
+      "description": "pending = awaiting author. written = author produced compiling test (+ stub in tdd mode). implemented = implementation-author wrote source to satisfy test (tdd mode only). rejected_lint = compile/lint failed. quarantined = flaky or unrecoverable. surfaced_bug = new test fails 3-for-3 against current code; ESCALATE in summary."
+    },
+    "round": {
+      "type": "integer",
+      "minimum": -1,
+      "description": "Iteration index. round 0 is the initial Coverage Reviewer pass. Higher rounds come from adversarial findings. round -1 is reserved for fuzz-discovered reproducer tests appended out-of-band."
+    },
+    "source_of_unit": {
+      "type": "string",
+      "enum": ["coverage_reviewer", "adversarial_reviewer", "fuzz_runner"],
+      "description": "Which agent created this work unit. Useful for auditing and for iteration logic.",
+      "default": "coverage_reviewer"
+    }
+  },
+  "additionalProperties": false
+}
