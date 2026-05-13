@@ -217,4 +217,98 @@ mod tests {
         );
         assert!(result.is_err(), "expected Err when spawning nonexistent command");
     }
+
+    /// Adversarial-review #wu-subproc-001 (HIGH): contract says combined stdout+stderr.
+    /// All prior tests only emitted to stdout; this one writes to BOTH.
+    #[test]
+    fn captures_both_stdout_and_stderr() {
+        let td = TempDir::new().unwrap();
+        let result = run_with_timeout(
+            "cmd",
+            &["/c", "echo OUT&echo ERR 1>&2"],
+            td.path(),
+            Duration::from_secs(10),
+        )
+        .unwrap();
+        assert_eq!(result.exit_code, 0);
+        assert!(
+            result.combined_output.contains("OUT"),
+            "stdout missing from combined_output: {:?}",
+            result.combined_output
+        );
+        assert!(
+            result.combined_output.contains("ERR"),
+            "stderr missing from combined_output: {:?}",
+            result.combined_output
+        );
+    }
+
+    /// Adversarial-review #wu-subproc-001 (HIGH): plain `child.kill()` only kills cmd.exe;
+    /// the grandchild ping.exe would survive and keep stdio handles open. The wrapper
+    /// must use `taskkill /F /T` to walk descendants. Verify no orphaned ping.exe
+    /// remains after timeout by tagging with a unique `-w` value.
+    #[test]
+    #[cfg(windows)]
+    fn timeout_kills_entire_process_tree() {
+        use std::process::Command;
+        let tag: u32 = 88_000_000 + (std::process::id() % 100_000);
+        let tag_str = tag.to_string();
+
+        let td = TempDir::new().unwrap();
+        let result = run_with_timeout(
+            "cmd",
+            &["/c", "ping", "127.0.0.1", "-n", "30", "-w", &tag_str],
+            td.path(),
+            Duration::from_millis(500),
+        )
+        .unwrap();
+        assert!(result.timed_out, "expected timeout");
+        assert_eq!(result.exit_code, -1);
+
+        std::thread::sleep(Duration::from_millis(500));
+
+        let probe_script = format!(
+            "Get-CimInstance Win32_Process -Filter \"Name='ping.exe'\" | \
+             Where-Object {{ $_.CommandLine -like '*-w {}*' }} | \
+             Select-Object -ExpandProperty ProcessId",
+            tag_str
+        );
+        let probe = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &probe_script])
+            .output()
+            .expect("powershell probe spawn");
+        let orphans = String::from_utf8_lossy(&probe.stdout).trim().to_string();
+        assert!(
+            orphans.is_empty(),
+            "process-tree kill failed: ping.exe with -w {} still running. PIDs: {}",
+            tag_str,
+            orphans
+        );
+    }
+
+    // Adversarial-review #wu-subproc-001 (MEDIUM): a stronger version of the env-leak test
+    // would set a sentinel value in the parent before the call. We considered adding one but
+    // it races against `sets_msbuild_env_var_on_child_only_not_parent` (cargo test parallelism;
+    // both tests touch MSBUILDDISABLENODEREUSE). Either the test pair gets serialized via the
+    // `serial_test` crate or this case stays uncovered. Tracked as a follow-up.
+
+/// Adversarial-review #wu-subproc-001 (MEDIUM): contract says "returns whatever was
+    /// captured so far" on timeout. The original timeout test ignored combined_output.
+    #[test]
+    fn timeout_preserves_partial_output_captured_before_kill() {
+        let td = TempDir::new().unwrap();
+        let result = run_with_timeout(
+            "cmd",
+            &["/c", "echo STARTED&ping 127.0.0.1 -n 30"],
+            td.path(),
+            Duration::from_millis(700),
+        )
+        .unwrap();
+        assert!(result.timed_out);
+        assert!(
+            result.combined_output.contains("STARTED"),
+            "expected captured pre-kill output to contain STARTED, got: {:?}",
+            result.combined_output
+        );
+    }
 }

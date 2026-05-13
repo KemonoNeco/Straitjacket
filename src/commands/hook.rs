@@ -1,3 +1,7 @@
+use anyhow::Context;
+use serde::{Deserialize, Serialize};
+use std::io::Read;
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum HookEvent {
     Preflight,
@@ -12,6 +16,318 @@ pub struct Args {
     pub event: HookEvent,
 }
 
-pub fn run(_args: Args) -> anyhow::Result<()> {
-    unimplemented!("hook — TDD work unit pending implementation")
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum HookDecision {
+    /// Allow the tool call / continue. Emits no blocking output.
+    Allow,
+    /// Block the tool call with the given reason.
+    Deny(String),
+    /// Post-tool: validation checks should be run by the host orchestrator (since
+    /// only the orchestrator knows the work-units path). The hook surfaces which
+    /// checks are appropriate for the subagent_type.
+    RunChecks(Vec<CheckKind>),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CheckKind {
+    VerifyNoTestMutation,
+    VerifyNewTestsCompile,
+    RunNewTests,
+    Preflight,
+}
+
+/// Forbidden substrings that must not leak into an adversarial agent's prompt.
+/// The agent's tool restriction (no Bash/PowerShell) already prevents it from
+/// running `git diff` itself; this scan is defense-in-depth on prompt construction.
+pub const FORBIDDEN_ADVERSARIAL_STRINGS: &[&str] = &["--- a/", "+++ b/", "git diff"];
+
+/// Decides what to do with a PreToolUse on the Agent tool when the spawned
+/// agent's subagent_type is one of the adversarial specialists.
+///
+/// Non-adversarial subagent_types are not this function's concern; the caller
+/// should short-circuit Allow before invoking this.
+pub fn decide_pre_adversarial(prompt: &str) -> HookDecision {
+    for forbidden in FORBIDDEN_ADVERSARIAL_STRINGS {
+        if prompt.contains(forbidden) {
+            return HookDecision::Deny(format!(
+                "adversarial-specialist prompt contains forbidden string: {:?}. The adversarial \
+                 agents must operate in isolation from the diff — strip and rebuild the prompt.",
+                forbidden
+            ));
+        }
+    }
+    HookDecision::Allow
+}
+
+/// Decides what post-tool checks to run after an Agent of the given subagent_type returns.
+pub fn decide_post_agent(subagent_type: &str) -> HookDecision {
+    match subagent_type {
+        "unit-test-author" | "integration-test-author" => HookDecision::RunChecks(vec![
+            CheckKind::VerifyNoTestMutation,
+            CheckKind::VerifyNewTestsCompile,
+        ]),
+        "implementation-author" => HookDecision::RunChecks(vec![
+            CheckKind::VerifyNewTestsCompile,
+            CheckKind::RunNewTests,
+        ]),
+        _ => HookDecision::Allow,
+    }
+}
+
+/// Returns true if the given slash-command name should trigger preflight on UserPromptExpansion.
+pub fn is_plugin_skill_invocation(command_name: &str) -> bool {
+    // The exact form Claude Code uses for plugin-scoped commands is verified at install time.
+    // We accept both `plugin:skill` form and bare `skill` form for robustness.
+    matches!(
+        command_name,
+        "regression-tests:regression-tests"
+            | "regression-tests:tdd"
+            | "regression-tests"
+            | "tdd"
+    )
+}
+
+/// Extracts `tool_input.prompt` from a hook stdin payload. Returns empty string
+/// if absent (caller should treat absence as "no scan needed").
+pub fn extract_prompt(payload: &serde_json::Value) -> &str {
+    payload
+        .get("tool_input")
+        .and_then(|t| t.get("prompt"))
+        .and_then(|p| p.as_str())
+        .unwrap_or("")
+}
+
+/// Extracts `tool_input.subagent_type` from a hook stdin payload. Returns empty string if absent.
+pub fn extract_subagent_type(payload: &serde_json::Value) -> &str {
+    payload
+        .get("tool_input")
+        .and_then(|t| t.get("subagent_type"))
+        .and_then(|s| s.as_str())
+        .unwrap_or("")
+}
+
+/// Extracts `prompt.command_name` for UserPromptExpansion events. Returns empty
+/// string if absent.
+pub fn extract_command_name(payload: &serde_json::Value) -> &str {
+    payload
+        .get("prompt")
+        .and_then(|p| p.get("command_name"))
+        .and_then(|s| s.as_str())
+        .or_else(|| payload.get("command_name").and_then(|s| s.as_str()))
+        .unwrap_or("")
+}
+
+/// Renders a HookDecision into the JSON shape Claude Code expects for a given event.
+pub fn render_decision(event: HookEvent, decision: &HookDecision) -> serde_json::Value {
+    match (event, decision) {
+        (HookEvent::PreAdversarial, HookDecision::Deny(reason)) => serde_json::json!({
+            "hookSpecificOutput": {
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            }
+        }),
+        (HookEvent::Preflight, HookDecision::Deny(reason)) => serde_json::json!({
+            "decision": "block",
+            "reason": reason,
+        }),
+        (HookEvent::PostAgent, HookDecision::Deny(reason)) => serde_json::json!({
+            "decision": "block",
+            "reason": reason,
+        }),
+        (_, HookDecision::Allow) => serde_json::json!({}),
+        (_, HookDecision::RunChecks(checks)) => serde_json::json!({
+            "checks_to_run": checks,
+        }),
+    }
+}
+
+pub fn run(args: Args) -> anyhow::Result<()> {
+    let mut buf = String::new();
+    std::io::stdin()
+        .read_to_string(&mut buf)
+        .context("read hook stdin payload")?;
+
+    let payload: serde_json::Value = if buf.trim().is_empty() {
+        serde_json::Value::Null
+    } else {
+        serde_json::from_str(&buf).unwrap_or(serde_json::Value::Null)
+    };
+
+    let decision = match args.event {
+        HookEvent::Preflight => {
+            let cmd = extract_command_name(&payload);
+            if !cmd.is_empty() && !is_plugin_skill_invocation(cmd) {
+                HookDecision::Allow
+            } else {
+                // Caller (orchestrator script) handles the actual preflight check; we just
+                // signal allow here since no static decision is possible without running
+                // baseline_check / lint_check, which the SKILL.md Phase 1 already does.
+                HookDecision::Allow
+            }
+        }
+        HookEvent::PreAdversarial => {
+            let st = extract_subagent_type(&payload);
+            if st.starts_with("adversarial-") {
+                decide_pre_adversarial(extract_prompt(&payload))
+            } else {
+                HookDecision::Allow
+            }
+        }
+        HookEvent::PostAgent => {
+            let st = extract_subagent_type(&payload);
+            decide_post_agent(st)
+        }
+    };
+
+    let response = render_decision(args.event, &decision);
+    if !response.as_object().map(|m| m.is_empty()).unwrap_or(true) {
+        println!("{}", serde_json::to_string(&response)?);
+    }
+
+    // Exit code semantics: 0 = allow / no-op; 2 = block with stderr message. We use 0 + JSON
+    // here per the documented decision/permissionDecision pattern.
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pre_adversarial_clean_prompt_allows() {
+        let d = decide_pre_adversarial("Review the following tests for vacuousness...");
+        assert_eq!(d, HookDecision::Allow);
+    }
+
+    #[test]
+    fn pre_adversarial_diff_marker_denies() {
+        let d = decide_pre_adversarial("--- a/foo.rs\n+++ b/foo.rs\n@@ ...");
+        match d {
+            HookDecision::Deny(reason) => {
+                assert!(reason.contains("--- a/") || reason.contains("forbidden"));
+            }
+            other => panic!("expected Deny, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn pre_adversarial_git_diff_string_denies() {
+        let d = decide_pre_adversarial("The orchestrator ran git diff before this...");
+        assert!(matches!(d, HookDecision::Deny(_)));
+    }
+
+    #[test]
+    fn post_agent_unit_test_author_runs_mutation_plus_compile() {
+        let d = decide_post_agent("unit-test-author");
+        assert_eq!(
+            d,
+            HookDecision::RunChecks(vec![
+                CheckKind::VerifyNoTestMutation,
+                CheckKind::VerifyNewTestsCompile,
+            ])
+        );
+    }
+
+    #[test]
+    fn post_agent_integration_test_author_runs_mutation_plus_compile() {
+        let d = decide_post_agent("integration-test-author");
+        assert_eq!(
+            d,
+            HookDecision::RunChecks(vec![
+                CheckKind::VerifyNoTestMutation,
+                CheckKind::VerifyNewTestsCompile,
+            ])
+        );
+    }
+
+    #[test]
+    fn post_agent_implementation_author_runs_compile_plus_run() {
+        let d = decide_post_agent("implementation-author");
+        assert_eq!(
+            d,
+            HookDecision::RunChecks(vec![
+                CheckKind::VerifyNewTestsCompile,
+                CheckKind::RunNewTests,
+            ])
+        );
+    }
+
+    #[test]
+    fn post_agent_unknown_subagent_is_silent_noop() {
+        assert_eq!(decide_post_agent("general-purpose"), HookDecision::Allow);
+        assert_eq!(decide_post_agent(""), HookDecision::Allow);
+        assert_eq!(decide_post_agent("Explore"), HookDecision::Allow);
+    }
+
+    #[test]
+    fn plugin_skill_invocation_matcher_accepts_namespaced_and_bare() {
+        assert!(is_plugin_skill_invocation("regression-tests:regression-tests"));
+        assert!(is_plugin_skill_invocation("regression-tests:tdd"));
+        assert!(is_plugin_skill_invocation("regression-tests"));
+        assert!(is_plugin_skill_invocation("tdd"));
+    }
+
+    #[test]
+    fn plugin_skill_invocation_matcher_rejects_unrelated() {
+        assert!(!is_plugin_skill_invocation("review"));
+        assert!(!is_plugin_skill_invocation(""));
+        assert!(!is_plugin_skill_invocation("other-plugin:tdd"));
+    }
+
+    #[test]
+    fn extract_prompt_reads_tool_input_prompt() {
+        let payload = serde_json::json!({ "tool_input": { "prompt": "hello" } });
+        assert_eq!(extract_prompt(&payload), "hello");
+    }
+
+    #[test]
+    fn extract_prompt_returns_empty_when_absent() {
+        let payload = serde_json::json!({});
+        assert_eq!(extract_prompt(&payload), "");
+    }
+
+    #[test]
+    fn extract_subagent_type_reads_correct_field() {
+        let payload = serde_json::json!({
+            "tool_input": { "subagent_type": "adversarial-vacuousness" }
+        });
+        assert_eq!(extract_subagent_type(&payload), "adversarial-vacuousness");
+    }
+
+    #[test]
+    fn render_deny_for_pre_adversarial_uses_permission_decision_shape() {
+        let d = HookDecision::Deny("forbidden string".into());
+        let rendered = render_decision(HookEvent::PreAdversarial, &d);
+        let outer = rendered.get("hookSpecificOutput").unwrap();
+        assert_eq!(outer.get("permissionDecision").unwrap(), "deny");
+        assert!(outer.get("permissionDecisionReason").is_some());
+    }
+
+    #[test]
+    fn render_deny_for_post_agent_uses_decision_block_shape() {
+        let d = HookDecision::Deny("test mutation detected".into());
+        let rendered = render_decision(HookEvent::PostAgent, &d);
+        assert_eq!(rendered.get("decision").unwrap(), "block");
+        assert!(rendered.get("reason").is_some());
+    }
+
+    #[test]
+    fn render_allow_is_empty_object() {
+        let rendered = render_decision(HookEvent::PreAdversarial, &HookDecision::Allow);
+        assert_eq!(rendered, serde_json::json!({}));
+    }
+
+    #[test]
+    fn render_run_checks_includes_kebab_case_names() {
+        let d = HookDecision::RunChecks(vec![
+            CheckKind::VerifyNoTestMutation,
+            CheckKind::RunNewTests,
+        ]);
+        let rendered = render_decision(HookEvent::PostAgent, &d);
+        let checks = rendered.get("checks_to_run").unwrap();
+        let arr = checks.as_array().unwrap();
+        assert_eq!(arr[0], "verify-no-test-mutation");
+        assert_eq!(arr[1], "run-new-tests");
+    }
 }

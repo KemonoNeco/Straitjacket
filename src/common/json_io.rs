@@ -118,4 +118,41 @@ mod tests {
         let result: anyhow::Result<Sample> = read_json_file(&path);
         assert!(result.is_err(), "expected Err for invalid JSON");
     }
+
+    /// Adversarial-review #wu-jsonio-002 (MEDIUM): contract says "pretty-printed".
+    /// Round-trip alone passes for compact JSON. Verify multi-line indented output.
+    #[test]
+    fn output_is_pretty_printed_not_compact() {
+        let td = TempDir::new().unwrap();
+        let path = td.path().join("data.json");
+        write_json_file(&path, &sample()).unwrap();
+        let content = fs::read_to_string(&path).unwrap();
+        let newline_count = content.matches('\n').count();
+        assert!(
+            newline_count > 2,
+            "expected pretty-printed multi-line JSON; got {} newlines in: {:?}",
+            newline_count,
+            content
+        );
+        assert!(
+            content.contains("  \"name\"") || content.contains("  \"value\""),
+            "expected indented field, got: {:?}",
+            content
+        );
+    }
+
+    /// Adversarial-review #wu-jsonio-001 (LOW): UTF-8 multibyte round-trip.
+    #[test]
+    fn utf8_multibyte_content_round_trips_losslessly() {
+        let td = TempDir::new().unwrap();
+        let path = td.path().join("unicode.json");
+        let original = Sample {
+            name: "おはよう 🌸 émojí ünïcôdé".into(),
+            value: 0,
+            tags: vec!["café".into(), "日本語".into()],
+        };
+        write_json_file(&path, &original).unwrap();
+        let restored: Sample = read_json_file(&path).unwrap();
+        assert_eq!(original, restored);
+    }
 }

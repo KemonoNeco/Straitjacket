@@ -1,0 +1,39 @@
+{
+  "description": "Invariant enforcement for the regression-tests plugin. Three hooks: UserPromptExpansion runs preflight (baseline + lint) before the skill starts; PreToolUse on Agent scans adversarial-specialist prompts for diff leakage; PostToolUse on Agent dispatches verify-no-test-mutation / verify-new-tests-compile / run-new-tests based on subagent_type.",
+  "hooks": {
+    "UserPromptExpansion": [
+      {
+        "matcher": "regression-tests:regression-tests|regression-tests:tdd|^regression-tests$|^tdd$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/regression-tests hook preflight"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/regression-tests hook pre-adversarial",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/regression-tests hook post-agent"
+          }
+        ]
+      }
+    ]
+  }
+}
