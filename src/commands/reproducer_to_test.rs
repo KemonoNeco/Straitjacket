@@ -1,3 +1,4 @@
+use crate::common::json_io::parse_work_units_array;
 use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
 use crate::common::Stack;
 use anyhow::{anyhow, Context};
@@ -242,21 +243,12 @@ fn append_work_unit(
                 work_units_file.display()
             )
         })?;
-        match parsed {
-            serde_json::Value::Array(a) => a,
-            // Accept the orchestrator's `{work_units: [...]}` wrapper shape too.
-            serde_json::Value::Object(ref o) => match o.get("work_units").and_then(|v| v.as_array()) {
-                Some(arr) => arr.clone(),
-                None => {
-                    return Err(anyhow!(
-                        "work-units file must be a JSON array or an object with a `work_units` array: {}",
-                        work_units_file.display()
-                    ))
-                }
-            },
-            _ => {
+        // Strict-accept: refuse to silently clobber an unrecognized work-units file shape.
+        match parse_work_units_array(&parsed) {
+            Some(slice) => slice.to_vec(),
+            None => {
                 return Err(anyhow!(
-                    "work-units file must be a JSON array or object: {}",
+                    "work-units file must be a JSON array or an object with a `work_units` array: {}",
                     work_units_file.display()
                 ))
             }
@@ -666,6 +658,69 @@ mod tests {
         assert!(
             content.contains("MyApp.Parsers.Header.Parse(input)"),
             "multi-segment call site not found in:\n{content}"
+        );
+    }
+
+    /// Lock the wrapper-object acceptance: when work-units.json already exists in the
+    /// orchestrator's `{"work_units": [...], "scope_summary": ...}` shape, append_work_unit
+    /// must extract the inner array, push the new fuzz-discovered unit, and not drop
+    /// existing entries. The pre-existing entry must survive the append.
+    #[test]
+    fn test_append_work_unit_accepts_orchestrator_wrapper_object_shape() {
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+
+        let existing_wrapper = serde_json::json!({
+            "work_units": [
+                {
+                    "id": "preexisting-unit-aaaa",
+                    "target_file": "src/old.rs",
+                    "target_symbol": "old::sym",
+                    "status": "written"
+                }
+            ],
+            "scope_summary": "wrapper-level metadata from coverage-reviewer"
+        });
+        fs::write(
+            &wu_path,
+            serde_json::to_string_pretty(&existing_wrapper).unwrap(),
+        )
+        .unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "bbb222",
+            42,
+            &td.path().join("t.rs"),
+            "fuzz_repro_bbb222",
+        );
+        assert!(
+            result.is_ok(),
+            "append_work_unit must accept wrapper-shape work-units.json; got: {result:?}"
+        );
+
+        // Read back. After the fix, the file is written as a bare array (the wrapper's
+        // top-level scope_summary etc. are intentionally not preserved on append; the
+        // critical invariant is that the inner array's contents survive).
+        let after_text = fs::read_to_string(&wu_path).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&after_text).unwrap();
+        let after_arr = after.as_array().expect(
+            "after append, file should be a bare array (or extract via parse_work_units_array)",
+        );
+        assert_eq!(
+            after_arr.len(),
+            2,
+            "wrapper inner array's 1 entry + 1 appended = 2; got: {after_arr:?}"
+        );
+        let ids: Vec<&str> = after_arr
+            .iter()
+            .filter_map(|v| v.get("id").and_then(|s| s.as_str()))
+            .collect();
+        assert!(
+            ids.contains(&"preexisting-unit-aaaa"),
+            "pre-existing unit from the wrapper's inner array must survive the append; got ids: {ids:?}"
         );
     }
 }
