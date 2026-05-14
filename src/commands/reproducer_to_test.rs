@@ -97,8 +97,20 @@ fn find_enclosing_cargo_toml(start: &Path) -> Option<PathBuf> {
 
 fn extract_crate_name(cargo_toml: &Path) -> Option<String> {
     let content = fs::read_to_string(cargo_toml).ok()?;
+    let mut in_package = false;
     for line in content.lines() {
         let trimmed = line.trim();
+        // Section header: [package], [lib], [[bin]], [dependencies.foo], etc.
+        if let Some(inside) = trimmed.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            // Handle array-of-tables [[bin]] by stripping the inner brackets.
+            let inside = inside.strip_prefix('[').unwrap_or(inside);
+            let inside = inside.strip_suffix(']').unwrap_or(inside);
+            in_package = inside == "package";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
         if let Some(rest) = trimmed.strip_prefix("name") {
             let rest = rest.trim_start_matches([' ', '\t', '=']).trim();
             if let Some(name) = rest.strip_prefix('"') {
@@ -121,8 +133,16 @@ pub fn generate_rust_reproducer(
     let test_name = format!("fuzz_repro_{}", short);
     let byte_lit = format_rust_byte_literal(bytes);
     let timestamp = Utc::now().format("%Y-%m-%d").to_string();
+    // For paths like `Parser::parse_header` we cannot emit `use crate::Parser::parse_header;`
+    // (Rust does not permit importing a method via `use`). Always import only up to the
+    // second-to-last segment — that works whether the final segment is a method on a type
+    // (`Parser::parse_header` -> `use crate::Parser;`) or a function in a module
+    // (`parser::parse_header` -> `use crate::parser;`).
     let use_stmt = match crate_name {
-        Some(name) => format!("use {}::{};", name, target_function),
+        Some(name) => match target_function.rsplit_once("::") {
+            Some((prefix, _last)) => format!("use {}::{};", name, prefix),
+            None => format!("use {}::{};", name, target_function),
+        },
         None => format!("// adjust this `use` to import {}", target_function),
     };
     let content = format!(
@@ -216,10 +236,30 @@ fn append_work_unit(
     let mut existing: Vec<serde_json::Value> = if work_units_file.exists() {
         let text = fs::read_to_string(work_units_file)
             .with_context(|| format!("read {}", work_units_file.display()))?;
-        let parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or(serde_json::json!([]));
+        let parsed: serde_json::Value = serde_json::from_str(&text).with_context(|| {
+            format!(
+                "parse existing work-units file {} (refusing to clobber malformed JSON)",
+                work_units_file.display()
+            )
+        })?;
         match parsed {
             serde_json::Value::Array(a) => a,
-            single => vec![single],
+            // Accept the orchestrator's `{work_units: [...]}` wrapper shape too.
+            serde_json::Value::Object(ref o) => match o.get("work_units").and_then(|v| v.as_array()) {
+                Some(arr) => arr.clone(),
+                None => {
+                    return Err(anyhow!(
+                        "work-units file must be a JSON array or an object with a `work_units` array: {}",
+                        work_units_file.display()
+                    ))
+                }
+            },
+            _ => {
+                return Err(anyhow!(
+                    "work-units file must be a JSON array or object: {}",
+                    work_units_file.display()
+                ))
+            }
         }
     } else {
         Vec::new()
@@ -454,7 +494,9 @@ mod tests {
         assert!(content.contains("#[test]"));
         assert!(content.contains(&test_name));
         assert!(content.contains("parser::parse_header(input)"));
-        assert!(content.contains("use mycrate::parser::parse_header;"));
+        // Imports the parent module/type only — never the method.
+        assert!(content.contains("use mycrate::parser;"));
+        assert!(!content.contains("use mycrate::parser::parse_header;"));
     }
 
     #[test]
@@ -516,5 +558,114 @@ mod tests {
         let arr = parsed.as_array().unwrap();
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["id"], "old");
+    }
+
+    // --- new tests added by unit-test-author ---
+
+    #[test]
+    fn test_extract_crate_name_ignores_name_keys_outside_package_section() {
+        // A Cargo.toml where a `name` key appears in [lib] before [package].
+        // The function must return the value from [package], not the first textual match.
+        let td = TempDir::new().unwrap();
+        let cargo = td.path().join("Cargo.toml");
+        fs::write(
+            &cargo,
+            "[lib]\nname = \"wrong-name\"\n\n[package]\nname = \"correct-name\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        assert_eq!(extract_crate_name(&cargo), Some("correct-name".to_string()));
+    }
+
+    #[test]
+    fn test_generate_rust_reproducer_emits_valid_use_for_type_method_paths() {
+        // target_function contains `::` with a Type-style first segment (e.g. `Parser::parse_header`).
+        // Emitting `use mycrate::Parser::parse_header;` is invalid Rust.
+        // The function must NOT produce that exact invalid form.
+        let bytes = b"input";
+        let (_test_name, content) =
+            generate_rust_reproducer(bytes, "Parser::parse_header", Some("mycrate"), "artifact");
+        assert!(
+            !content.contains("use mycrate::Parser::parse_header;"),
+            "emitted invalid `use` form `use mycrate::Parser::parse_header;`:\n{content}"
+        );
+    }
+
+    #[test]
+    fn test_rust_byte_literal_wraps_exactly_at_thirteenth_byte_not_twelfth() {
+        // 12 bytes: all fit on one row — zero embedded newlines.
+        let twelve: Vec<u8> = (0u8..12).collect();
+        let lit12 = format_rust_byte_literal(&twelve);
+        assert_eq!(
+            lit12.matches('\n').count(),
+            0,
+            "12-byte literal should have 0 newlines, got: {lit12}"
+        );
+
+        // 13 bytes: the 13th entry (index 12) triggers the wrap — exactly one newline.
+        let thirteen: Vec<u8> = (0u8..13).collect();
+        let lit13 = format_rust_byte_literal(&thirteen);
+        assert_eq!(
+            lit13.matches('\n').count(),
+            1,
+            "13-byte literal should have exactly 1 newline, got: {lit13}"
+        );
+    }
+
+    #[test]
+    fn test_append_work_unit_does_not_silently_clobber_malformed_existing_file() {
+        // When the existing work-units.json contains malformed JSON, append_work_unit must
+        // either (a) return an Err, OR (b) leave the original file content intact.
+        // What it must NOT do: return Ok and silently overwrite with a fresh single-element array.
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+        let malformed = "[{not valid json sentinel_unique_string";
+        fs::write(&wu_path, malformed).unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "aaa111",
+            7,
+            &td.path().join("t.rs"),
+            "fuzz_repro_aaa111",
+        );
+
+        let after = fs::read_to_string(&wu_path).unwrap_or_default();
+        // Silent clobber: returned Ok AND the file is now a clean single-element valid array
+        // AND the original sentinel is gone.
+        let silently_clobbered = result.is_ok()
+            && serde_json::from_str::<Vec<serde_json::Value>>(&after)
+                .map(|a| a.len() == 1)
+                .unwrap_or(false)
+            && !after.contains("sentinel_unique_string");
+        assert!(
+            !silently_clobbered,
+            "silent clobber detected: result={result:?}, file after=\n{after}"
+        );
+    }
+
+    #[test]
+    fn test_sha256_with_short_for_empty_input_uses_known_value() {
+        // Known SHA-256 of the empty byte sequence.
+        let (full, short) = sha256_with_short(&[]);
+        assert_eq!(
+            full,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+        assert_eq!(short, "e3b0c44298fc");
+    }
+
+    #[test]
+    fn test_generate_csharp_reproducer_preserves_multi_segment_namespace_path() {
+        // target_function has more than two segments (e.g., `MyApp.Parsers.Header.Parse`).
+        // All-but-last segments must form the type/namespace path; the call site must read
+        // `MyApp.Parsers.Header.Parse(input)` (dots preserved, not just the last two segments).
+        let (_test_name, content) =
+            generate_csharp_reproducer(b"data", "MyApp.Parsers.Header.Parse", "artifact").unwrap();
+        assert!(
+            content.contains("MyApp.Parsers.Header.Parse(input)"),
+            "multi-segment call site not found in:\n{content}"
+        );
     }
 }

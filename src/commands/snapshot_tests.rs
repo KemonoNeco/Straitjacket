@@ -256,4 +256,18 @@ mod tests {
             .to_string_lossy()
             .contains("foo.rs"));
     }
+
+    #[test]
+    fn test_is_csharp_test_dir_name_requires_exact_suffix_not_substring() {
+        // A directory ending with exactly a recognized suffix is a test project.
+        assert!(
+            is_csharp_test_dir_name("MyApp.Tests"),
+            "MyApp.Tests should be classified as a test project dir"
+        );
+        // A directory where the suffix appears mid-string (not at end) must NOT match.
+        assert!(
+            !is_csharp_test_dir_name("MyApp.TestsHelpers"),
+            "MyApp.TestsHelpers should NOT be classified as a test project dir"
+        );
+    }
 }

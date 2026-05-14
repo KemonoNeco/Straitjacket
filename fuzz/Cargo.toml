@@ -1,0 +1,40 @@
+[package]
+name = "regression-tests-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+[dependencies.regression-tests]
+path = ".."
+
+# Prevent this fuzz crate from picking up the workspace root's [workspace] table
+# implicitly — cargo-fuzz init does not register fuzz/ as a workspace member.
+[workspace]
+
+[[bin]]
+name = "fuzz_format_rust_byte_literal"
+path = "fuzz_targets/fuzz_format_rust_byte_literal.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_decide_pre_adversarial"
+path = "fuzz_targets/fuzz_decide_pre_adversarial.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_rust_test_status"
+path = "fuzz_targets/fuzz_rust_test_status.rs"
+test = false
+doc = false
+bench = false

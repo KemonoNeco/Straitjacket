@@ -211,4 +211,16 @@ mod tests {
         let f = parse_csharp_failing_tests(output);
         assert!(f.is_empty());
     }
+
+    #[test]
+    fn test_parse_rust_failing_tests_ignores_panic_messages_and_unanchored_failed_text() {
+        // Panic message ("assertion failed:"), a finished-line with FAILED mid-string,
+        // and a summary line "test ... FAILED" that is not anchored to line start must
+        // NOT contribute entries. Only the canonical `^test <name> ... FAILED` line counts.
+        let output = "thread 'main' panicked: assertion failed: x == y\n\
+                      Finished test target FAILED\n\
+                      test foo::real ... FAILED\n";
+        let parsed = parse_rust_failing_tests(output);
+        assert_eq!(parsed, vec!["foo::real".to_string()]);
+    }
 }

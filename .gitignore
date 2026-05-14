@@ -12,3 +12,9 @@ target/
 
 # regression-tests runtime state directories (per-run artifacts)
 .claude-regression/
+
+# cargo-mutants run output
+mutants.out/
+
+# local Claude Code state (worktrees, agent IDs, settings overrides)
+.claude/

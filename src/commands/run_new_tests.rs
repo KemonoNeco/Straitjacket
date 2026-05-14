@@ -105,6 +105,12 @@ pub fn csharp_test_status(output: &str, name: &str) -> TestStatus {
 /// taking `expect` into account (Expect::Fail inverts the success interpretation
 /// for TDD red-check).
 pub fn classify(statuses: &[TestStatus], expect: Expect, runs: u32) -> (Classification, String) {
+    // Zero-runs is a degenerate case: the test was never executed, so we have no signal.
+    // Without this guard, `pass_count == runs` evaluates `0 == 0` and silently green-washes
+    // an unrun test as AllPass/"written".
+    if runs == 0 {
+        return (Classification::NeverFound, "quarantined".into());
+    }
     let pass_count = statuses.iter().filter(|s| **s == TestStatus::Pass).count() as u32;
     let fail_count = statuses.iter().filter(|s| **s == TestStatus::Fail).count() as u32;
     let unknown_count = statuses.iter().filter(|s| **s == TestStatus::Unknown).count() as u32;
@@ -149,7 +155,16 @@ struct NewUnit {
 
 fn collect_new_units(work_units_file: &Path) -> anyhow::Result<Vec<NewUnit>> {
     let v: serde_json::Value = read_json_file(work_units_file)?;
-    let arr = v.as_array().cloned().unwrap_or_else(|| vec![v.clone()]);
+    // Accept both shapes: bare array, OR `{"work_units": [...]}` wrapper from the orchestrator.
+    let arr: Vec<serde_json::Value> = match &v {
+        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Object(o) => o
+            .get("work_units")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    };
     let mut out = Vec::new();
     for u in arr {
         let status = u.get("status").and_then(|s| s.as_str()).unwrap_or("");
@@ -410,5 +425,105 @@ mod tests {
     fn classify_never_found_is_quarantined() {
         let (c, _) = classify(&[TestStatus::Unknown; 3], Expect::Pass, 3);
         assert_eq!(c, Classification::NeverFound);
+    }
+
+    // --- appended by unit-test-author (regression-tests, 2026-05-14) ---
+
+    #[test]
+    fn test_rust_test_status_distinguishes_exact_name_from_longer_prefix_sibling() {
+        // Both `parse_truncated` (ok) and `parse_truncated_extended` (FAILED) appear.
+        // The regex must not match the longer sibling as a Fail for the shorter name.
+        let output = "test mod::parse_truncated ... ok\ntest mod::parse_truncated_extended ... FAILED\n";
+        assert_eq!(
+            rust_test_status(output, "parse_truncated"),
+            TestStatus::Pass
+        );
+    }
+
+    #[test]
+    fn test_csharp_test_status_does_not_match_longer_identifier_suffix() {
+        // `Quux` appears only as part of `QuuxExtended`; `\b` word-boundary must prevent a match.
+        let output = "  Failed Foo.BarTest.QuuxExtended [12ms]\n";
+        assert_eq!(
+            csharp_test_status(output, "Quux"),
+            TestStatus::Unknown
+        );
+    }
+
+    #[test]
+    fn test_classify_expect_fail_with_any_pass_among_unknowns_is_vacuous_pre_impl() {
+        // Under Expect::Fail, a single Pass among Unknowns (zero Fails) means the test
+        // passed against an unimplemented!() stub — it must be classified as VacuousPreImpl
+        // with recommended_status "rejected_lint".
+        let statuses = [TestStatus::Pass, TestStatus::Unknown, TestStatus::Unknown];
+        let (classification, recommended_status) = classify(&statuses, Expect::Fail, 3);
+        assert_eq!(classification, Classification::VacuousPreImpl);
+        assert_eq!(recommended_status, "rejected_lint");
+    }
+
+    #[test]
+    fn test_classify_with_zero_runs_does_not_report_all_pass_or_surfaced_bug() {
+        // With an empty statuses slice and runs=0, the contract requires recommended_status
+        // to be "quarantined", never "written" (AllPass) or "surfaced_bug" (AllFail).
+        // Classification must be NeverFound or Flaky.
+        let (classification, recommended_status) = classify(&[], Expect::Pass, 0);
+        assert_eq!(recommended_status, "quarantined");
+        assert!(
+            matches!(classification, Classification::NeverFound | Classification::Flaky),
+            "expected NeverFound or Flaky but got {:?}",
+            classification
+        );
+    }
+
+    #[test]
+    fn test_only_written_status_units_are_collected_for_classification() {
+        // collect_new_units must skip units whose status is not exactly "written".
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-written",
+                "status": "written",
+                "output_test_name": "test_written",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-pending",
+                "status": "pending",
+                "output_test_name": "test_pending",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-implemented",
+                "status": "implemented",
+                "output_test_name": "test_implemented",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-rejected",
+                "status": "rejected_lint",
+                "output_test_name": "test_rejected",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-quarantined",
+                "status": "quarantined",
+                "output_test_name": "test_quarantined",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-surfaced",
+                "status": "surfaced_bug",
+                "output_test_name": "test_surfaced",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let units = collect_new_units(&path).unwrap();
+
+        assert_eq!(units.len(), 1);
+        assert_eq!(units[0].id, "unit-written");
     }
 }

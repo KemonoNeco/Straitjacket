@@ -311,4 +311,21 @@ mod tests {
             result.combined_output
         );
     }
+
+    #[test]
+    fn test_returns_err_when_cwd_does_not_exist() {
+        // A nonexistent cwd must cause spawn to return Err, not silently succeed.
+        // On Windows, CreateProcess returns ERROR_DIRECTORY when the cwd is invalid.
+        let nonexistent = Path::new("Z:\\nonexistent\\path\\that\\does\\not\\exist\\xyz123abc");
+        let result = run_with_timeout(
+            "cmd",
+            &["/c", "echo hi"],
+            nonexistent,
+            Duration::from_secs(5),
+        );
+        assert!(
+            result.is_err(),
+            "expected Err when cwd does not exist, got Ok"
+        );
+    }
 }

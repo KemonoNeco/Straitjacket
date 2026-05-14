@@ -353,4 +353,48 @@ mod tests {
         assert_eq!(arr[0], "verify-no-test-mutation");
         assert_eq!(arr[1], "run-new-tests");
     }
+
+    #[test]
+    fn test_pre_adversarial_denies_forbidden_string_embedded_after_leading_context() {
+        // Forbidden marker appears after non-empty leading context — not at position 0.
+        // Exercises that the substring scan does not require the marker to be at the start.
+        let prompt =
+            "Please review these tests for vacuousness.\nHere is some background material.\n\ngit diff origin/main\n";
+        let d = decide_pre_adversarial(prompt);
+        match d {
+            HookDecision::Deny(reason) => {
+                assert!(
+                    reason.contains("git diff"),
+                    "deny reason should name the forbidden substring; got: {reason}"
+                );
+            }
+            other => panic!("expected Deny, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_extract_command_name_falls_back_to_top_level_field() {
+        // Top-level `command_name` field (no `prompt` wrapper) — exercises the or_else branch.
+        let payload = serde_json::json!({ "command_name": "regression-tests:tdd" });
+        assert_eq!(extract_command_name(&payload), "regression-tests:tdd");
+    }
+
+    #[test]
+    fn test_render_deny_for_preflight_uses_decision_block_shape_not_permission_shape() {
+        let d = HookDecision::Deny("preflight block reason".into());
+        let rendered = render_decision(HookEvent::Preflight, &d);
+        assert_eq!(
+            rendered.get("decision").unwrap(),
+            "block",
+            "Preflight Deny must render decision=block"
+        );
+        assert!(
+            rendered.get("reason").is_some(),
+            "Preflight Deny must include a reason field"
+        );
+        assert!(
+            rendered.get("hookSpecificOutput").is_none(),
+            "Preflight Deny must NOT use the hookSpecificOutput/permissionDecision shape"
+        );
+    }
 }

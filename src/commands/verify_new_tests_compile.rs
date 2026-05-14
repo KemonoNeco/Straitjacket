@@ -62,13 +62,12 @@ pub fn find_enclosing_csproj(start: &Path) -> Option<PathBuf> {
     loop {
         if let Ok(rd) = fs::read_dir(&cur) {
             for entry in rd.flatten() {
-                if entry
-                    .path()
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    == Some("csproj")
-                {
-                    return Some(entry.path());
+                let path = entry.path();
+                // A directory named `Spurious.csproj/` would otherwise match by extension —
+                // require an actual file before returning.
+                let is_file = entry.file_type().map(|t| t.is_file()).unwrap_or(false);
+                if is_file && path.extension().and_then(|e| e.to_str()) == Some("csproj") {
+                    return Some(path);
                 }
             }
         }
@@ -327,5 +326,78 @@ mod tests {
         assert_eq!(first_n_lines(s, 3), "a\nb\nc");
         assert_eq!(first_n_lines(s, 10), s);
         assert_eq!(first_n_lines("", 5), "");
+    }
+
+    /// find_enclosing_csproj must only return paths to actual files with the .csproj
+    /// extension, not directories that happen to have a .csproj name suffix.
+    ///
+    /// Precondition: td/Spurious.csproj/ is a DIRECTORY (not a file), and there are
+    /// no real *.csproj files anywhere in the temp tree. Expected: None.
+    ///
+    /// NOTE: The current implementation does NOT call is_file() on matched entries,
+    /// only checks the extension. This test is expected to FAIL against the current
+    /// source, thereby surfacing the bug.
+    #[test]
+    fn test_find_enclosing_csproj_ignores_directories_with_csproj_suffix() {
+        let td = TempDir::new().unwrap();
+        let root = td.path();
+
+        // Create a directory whose name ends in .csproj (not a file).
+        let spurious_dir = root.join("Spurious.csproj");
+        fs::create_dir_all(&spurious_dir).unwrap();
+
+        // Plant a dummy file inside so we have a real path to start the walk from.
+        let dummy = spurious_dir.join("dummy.txt");
+        fs::write(&dummy, b"").unwrap();
+
+        // Expect None because Spurious.csproj is a directory, not a file.
+        assert_eq!(
+            find_enclosing_csproj(&dummy),
+            None,
+            "find_enclosing_csproj must not return a directory path — only real .csproj files"
+        );
+    }
+
+    /// When a work_units.json entry references an output_file_path that does not exist
+    /// on disk, verify_new_tests_compile must silently skip it (filtered at the
+    /// abs.is_file() check) rather than panicking or erroring.
+    ///
+    /// Expected: returns Ok, all_passed == true, per_unit_results is empty (no candidates).
+    #[test]
+    fn test_verify_new_tests_compile_skips_units_whose_output_file_does_not_exist() {
+        let td = TempDir::new().unwrap();
+        let repo_root = td.path();
+
+        // Work-units.json with status "written" so the entry passes the status filter,
+        // but output_file_path points to a file that does not exist on disk.
+        let work_units_json = serde_json::json!([
+            {
+                "id": "deadbeef-0000-0000-0000-000000000001",
+                "status": "written",
+                "output_file_path": "src/does_not_exist.rs"
+            }
+        ]);
+        let work_units_file = repo_root.join("work-units.json");
+        fs::write(&work_units_file, serde_json::to_string_pretty(&work_units_json).unwrap()).unwrap();
+
+        let log_dir = repo_root.join("logs");
+
+        let result = verify_new_tests_compile(
+            repo_root,
+            &work_units_file,
+            Stack::Rust,
+            &log_dir,
+        )
+        .expect("verify_new_tests_compile must return Ok even when output_file_path is missing");
+
+        assert!(
+            result.all_passed,
+            "all_passed must be true when there are no valid candidates"
+        );
+        assert!(
+            result.per_unit_results.is_empty(),
+            "per_unit_results must be empty when the missing-file entry is filtered out; got {:?}",
+            result.per_unit_results
+        );
     }
 }

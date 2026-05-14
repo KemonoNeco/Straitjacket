@@ -224,4 +224,43 @@ mod tests {
         assert!(names.iter().any(|n| n == "nested.rs"), "files in non-excluded dirs reached: {:?}", names);
         assert!(!names.iter().any(|n| n == "skip_dir"), "excluded dir not descended: {:?}", names);
     }
+
+    /// Lock the contract: a directory whose name is not valid UTF-8 (to_str() returns None)
+    /// is descended into rather than pruned. keep_entry falls through to `return true` for
+    /// such directories, so any file nested inside must appear in the walk result.
+    /// Windows-only: constructs a non-UTF-8 name via an unpaired surrogate in wide encoding.
+    #[cfg(windows)]
+    #[test]
+    fn test_keep_entry_keeps_directory_with_non_utf8_name() {
+        use std::os::windows::ffi::OsStringExt;
+
+        let td = TempDir::new().unwrap();
+        let root = td.path();
+
+        // Build an OsString with an unpaired high surrogate (U+D800) — not valid UTF-16.
+        // NTFS accepts such names; OsStr::to_str() returns None for them.
+        let bad_wide: &[u16] = &[0x0066, 0xD800, 0x006F]; // "f" + unpaired surrogate + "o"
+        let bad_name = std::ffi::OsString::from_wide(bad_wide);
+        let bad_dir = root.join(&bad_name);
+
+        // fs::create_dir may fail on some Windows filesystem configurations that
+        // reject surrogate-containing names. If it does, skip rather than fail.
+        if fs::create_dir(&bad_dir).is_err() {
+            // Cannot construct non-UTF-8 dir on this filesystem — skip.
+            return;
+        }
+
+        // Plant a file inside the non-UTF-8-named directory.
+        let inner = bad_dir.join("inner.rs");
+        fs::write(&inner, b"// inner").unwrap();
+
+        // walk_source_files must not panic and must find inner.rs.
+        let result = walk_source_files(root, &[], &["rs"]).unwrap();
+        let found = result.iter().any(|p| p.file_name().and_then(|n| n.to_str()) == Some("inner.rs"));
+        assert!(
+            found,
+            "inner.rs inside non-UTF-8 dir should be descended into and found; got {:?}",
+            result
+        );
+    }
 }
