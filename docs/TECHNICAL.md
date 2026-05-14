@@ -1,8 +1,8 @@
-# Technical guide — `regression-tests-plugin`
+# Technical guide - `regression-tests-plugin`
 
 A contributor-oriented walkthrough of the plugin's architecture, dispatch graphs, file lifecycle, and extension points. Pairs with [`CLAUDE.md`](../CLAUDE.md) (cardinal rules and gotchas) and [`README.md`](../README.md) (end-user install + usage).
 
-Read CLAUDE.md first if you intend to *modify* the plugin — it contains the load-bearing invariants. This document explains the *shape*; CLAUDE.md explains the *rules*.
+Read CLAUDE.md first if you intend to *modify* the plugin - it contains the load-bearing invariants. This document explains the *shape*; CLAUDE.md explains the *rules*.
 
 ## Table of contents
 
@@ -20,7 +20,7 @@ Read CLAUDE.md first if you intend to *modify* the plugin — it contains the lo
 
 ## What ships in this repo
 
-Five artifact classes — only one of them is "the Rust crate":
+Five artifact classes - only one of them is "the Rust crate":
 
 ```
 regression-tests-plugin/
@@ -48,12 +48,12 @@ regression-tests-plugin/
 ├── src/                    (5b) Helper-binary source (10 subcommands)
 │   ├── main.rs
 │   ├── lib.rs
-│   ├── commands/*.rs       (10 files — one per subcommand)
+│   ├── commands/*.rs       (10 files - one per subcommand)
 │   └── common/*.rs         (walk, subprocess, json_io)
 └── schemas/work-unit.schema.json   The orchestrator ↔ author contract
 ```
 
-The **primary output** is (1) + (2) + (3) + (4) — the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skills shell out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
+The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skills shell out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
 
 ## The five-layer architecture
 
@@ -128,13 +128,13 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
    └────────────────────────────┬────────────────────────────────┘
                                 ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 1 — Detect & Baseline                                  │
+   │ Phase 1 - Detect & Baseline                                  │
    │   detect-stack → tooling.json → snapshot-tests              │
    │   → coverage-baseline.json → scaffolded.json (C# only)       │
    └────────────────────────────┬────────────────────────────────┘
                                 ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 2 — Coverage Planning                                  │
+   │ Phase 2 - Coverage Planning                                  │
    │   Agent(coverage-reviewer, opus)                             │
    │   → work-units.json (round 0, status=pending)                │
    │   → user confirms intended_behavior contracts (unless        │
@@ -142,7 +142,7 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
    └────────────────────────────┬────────────────────────────────┘
                                 ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 3 — Parallel Author Teams                              │
+   │ Phase 3 - Parallel Author Teams                              │
    │   one message, N parallel Agent blocks:                      │
    │     · unit-test-author (sonnet) × chunks                     │
    │     · integration-test-author (opus) × chunks                │
@@ -151,7 +151,7 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
    └────────────────────────────┬────────────────────────────────┘
                                 ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 4 — Adversarial Validation                             │
+   │ Phase 4 - Adversarial Validation                             │
    │  4a) one message, 3 parallel adversarial specialists:        │
    │       · adversarial-vacuousness    (sonnet)                  │
    │       · adversarial-happy-path     (sonnet)                  │
@@ -166,7 +166,7 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
    └────────────────────────────┬────────────────────────────────┘
                                 ▼
    ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 5 — Verify & Finalize                                  │
+   │ Phase 5 - Verify & Finalize                                  │
    │   run-new-tests --runs=3 (Flaky / AllFail / AllPass)         │
    │   coverage delta vs baseline                                 │
    │   iterate if mutants survived OR new fuzz reproducers OR     │
@@ -180,26 +180,26 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
 Same Phase 1-2, but the `coverage-reviewer` runs in `spec` mode and populates `target_stub_path`. Phase 3 authors write tests *and* compile-fail stubs. New phases:
 
 ```
-   Phase 3 — Test + Stub Authoring
+   Phase 3 - Test + Stub Authoring
      authors write test AND stub at target_stub_path
      stub body = unimplemented!() / throw new NotImplementedException()
      run-new-tests --expect=fail   ← red-check; vacuous tests caught here
                                 ▼
-   Phase 4 — Pre-Implementation Adversarial Validation
+   Phase 4 - Pre-Implementation Adversarial Validation
      three specialists + synthesis (no mutation, no impl yet)
      re-dispatch authors if findings severity ≥ medium
                                 ▼
-   Phase 5 — Implementation
+   Phase 5 - Implementation
      Agent(implementation-author, opus) × chunks (≤4 parallel)
      Hook: PostToolUse → verify-new-tests-compile + run-new-tests --expect=pass
      end-of-phase: verify-no-test-mutation (audit)
                                 ▼
-   Phase 6 — Passing-Reason Validation
+   Phase 6 - Passing-Reason Validation
      adversarial team + synthesis + mutation runners (one message, parallel)
      fuzz pipeline (only if --with-fuzz)
      surviving mutants → new work units → iterate
                                 ▼
-   Phase 7 — Verify & Finalize
+   Phase 7 - Verify & Finalize
      run-new-tests --runs=3 --expect=pass
      summary with "Implementation written" section
 ```
@@ -224,9 +224,9 @@ Eleven specialist agents, four model tiers, three concurrency patterns:
 │   misalignment       │           │        │                       │ one message     │
 │ adversarial-         │ opus      │ xhigh  │ Read, Grep, Glob      │ single, after   │
 │   synthesis          │           │        │                       │ specialists     │
-│ mutation-runner      │ haiku     │ —      │ Read, Bash, PowerShell│ ≤3 parallel     │
+│ mutation-runner      │ haiku     │ -      │ Read, Bash, PowerShell│ ≤3 parallel     │
 │ fuzz-harness-author  │ opus      │ xhigh  │ R,Gp,Gb,W,E,Bash,PS   │ single          │
-│ fuzz-runner          │ haiku     │ —      │ Read, Glob, Bash, PS  │ ≤2 parallel     │
+│ fuzz-runner          │ haiku     │ -      │ Read, Glob, Bash, PS  │ ≤2 parallel     │
 │ implementation-      │ opus      │ xhigh  │ R,Gp,Gb, Write, Edit  │ ≤4 parallel     │
 │   author             │           │        │                       │ (tdd Phase 5)   │
 └──────────────────────┴───────────┴────────┴───────────────────────┴─────────────────┘
@@ -234,9 +234,9 @@ Eleven specialist agents, four model tiers, three concurrency patterns:
 
 **Tool restrictions are load-bearing.** The three `adversarial-*` specialists do *not* have `Bash` or `PowerShell`. They cannot `git diff`, cannot read git history, cannot shell out. That isolation from "what changed" is the structural guarantee that adversarial review is not anchored to author rationalizations. The plugin's `PreToolUse` hook adds defense-in-depth by scanning prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before the spawn.
 
-**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes. Sonnet 4.6 outperforms a multi-dimensional brief; a downstream Opus `adversarial-synthesis` dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern that the [design plan](../README.md#status) is built around.
+**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes. Sonnet 4.6 outperforms a multi-dimensional brief; a downstream Opus `adversarial-synthesis` dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern the plugin is built around.
 
-**Why parallel-in-one-message.** Spawning the three adversarial specialists in *separate* messages serializes them — Claude Code only fans out `Agent` tool calls within a single response. Same applies to author chunks in Phase 3 and the synthesis/fuzz parallel pair in Phase 4.
+**Why parallel-in-one-message.** Spawning the three adversarial specialists in *separate* messages serializes them - Claude Code only fans out `Agent` tool calls within a single response. Same applies to author chunks in Phase 3 and the synthesis/fuzz parallel pair in Phase 4.
 
 ## Hook lifecycle
 
@@ -272,7 +272,7 @@ Three Claude Code hook events, each backed by a pure function in `src/commands/h
 * `PreToolUse/Deny` → `{hookSpecificOutput: {permissionDecision: "deny", permissionDecisionReason: "..."}}`.
 * `PostToolUse/Preflight Deny` → `{decision: "block", reason: "..."}`.
 * `Allow` → empty object (no stdout).
-* `RunChecks(...)` → `{checks_to_run: ["verify-new-tests-compile", ...]}` — kebab-case names; orchestrator dispatches.
+* `RunChecks(...)` → `{checks_to_run: ["verify-new-tests-compile", ...]}` - kebab-case names; orchestrator dispatches.
 
 **Why `verify-no-test-mutation` is not a per-author hook.** An earlier iteration ran SHA-256 checks after every author returned. False positives flooded the test runs because idiomatic Rust source files embed `#[cfg(test)] mod tests`, so a legitimate authoring of an in-source test trips a "test file modified" warning. The current design runs the audit *once* at end-of-phase by the orchestrator (still backed by `bin/regression-tests verify-no-test-mutation`) and relies on the `adversarial-vacuousness` + `adversarial-misalignment` specialists as primary cheat detection.
 
@@ -295,7 +295,7 @@ regression-tests <subcommand> [options]
                             pre-adversarial | post-agent)
 ```
 
-**Architectural pattern across all subcommands** — `commands/<name>.rs` contains:
+**Architectural pattern across all subcommands** - `commands/<name>.rs` contains:
 
 1. A `#[derive(clap::Args)] pub struct Args` defining the CLI surface.
 2. One or more `pub fn` *pure-data helpers* (e.g., `detect_stack(repo_root: &Path)`, `parse_rust_failing_tests(output: &str)`) returning typed results. These get unit tests.
@@ -305,7 +305,7 @@ The split is enforced by testability: a `run(args)` that bakes I/O + parsing + J
 
 ## Run-state file lifecycle
 
-Every skill invocation gets a `<repo_root>/.claude-regression/<run_id>/` directory (the directory itself is gitignored automatically — the orchestrator appends `.claude-regression/` to `.gitignore` on first run).
+Every skill invocation gets a `<repo_root>/.claude-regression/<run_id>/` directory (the directory itself is gitignored automatically - the orchestrator appends `.claude-regression/` to `.gitignore` on first run).
 
 ```
 .claude-regression/<run_id>/                  run_id = YYYYMMDDThhmmss-<4-char hex>
@@ -352,7 +352,7 @@ WorkUnit
 └── source_of_unit      "coverage_reviewer" | "adversarial_reviewer" | "fuzz_runner"
 ```
 
-**Immutability is the alignment anchor.** Once the Coverage Reviewer commits `intended_behavior`, no downstream agent — author, adversarial reviewer, implementation-author, synthesizer — may rewrite it. Disagreements surface in `notes_to_orchestrator` and route back to the user via the final summary. This is the structural guarantee that the adversarial specialists are reviewing against a fixed contract, not against the test author's evolving interpretation.
+**Immutability is the alignment anchor.** Once the Coverage Reviewer commits `intended_behavior`, no downstream agent - author, adversarial reviewer, implementation-author, synthesizer - may rewrite it. Disagreements surface in `notes_to_orchestrator` and route back to the user via the final summary. This is the structural guarantee that the adversarial specialists are reviewing against a fixed contract, not against the test author's evolving interpretation.
 
 ## Test isolation invariants
 
@@ -391,7 +391,7 @@ WorkUnit
    ---
    ```
 2. Body: Role / Inputs / Procedure / Output contract / Anti-patterns. Follow the structure in existing `agents/*.md`.
-3. **Tool restrictions are load-bearing** — if the agent is supposed to operate in isolation from a class of inputs, do *not* grant `Bash`/`PowerShell`. The restriction is the structural guarantee.
+3. **Tool restrictions are load-bearing** - if the agent is supposed to operate in isolation from a class of inputs, do *not* grant `Bash`/`PowerShell`. The restriction is the structural guarantee.
 4. If the agent dispatches checks after returning, wire it into `decide_post_agent()` in `src/commands/hook.rs`.
 
 ### Adding a new hook event
@@ -404,8 +404,8 @@ WorkUnit
 
 ## Cross-platform status
 
-* **Windows x86_64** — fully supported. CI not yet wired (work-in-progress).
-* **Linux** — Rust crate compiles; `kill_process_tree` is stubbed. Test the process-tree kill behavior before declaring support.
-* **macOS** — same as Linux.
+* **Windows x86_64** - fully supported. CI not yet wired (work-in-progress).
+* **Linux** - Rust crate compiles; `kill_process_tree` is stubbed. Test the process-tree kill behavior before declaring support.
+* **macOS** - same as Linux.
 
 Cross-platform binary publishing via a GitHub Actions matrix is tracked in [the README's status section](../README.md#status). The Rust source has no Windows-specific syntax in business logic; the platform gates are confined to `subprocess.rs`.

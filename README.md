@@ -1,6 +1,6 @@
 # regression-tests plugin
 
-A Claude Code plugin that ships two multi-agent test workflows on top of a shared specialist-agent framework. Both skills harden test suites against the same four failure modes — **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** — using parallel specialist subagents, mutation testing, and (optionally) fuzzing.
+A Claude Code plugin that ships two multi-agent test workflows on top of a shared specialist-agent framework. Both skills harden test suites against the same four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing.
 
 * **Looking for usage?** Jump to [Quickstart](#quickstart).
 * **Looking for design?** Read [docs/TECHNICAL.md](docs/TECHNICAL.md) for the architecture deep-dive.
@@ -22,7 +22,7 @@ Both skills run the same pipeline shape: **coverage planning → parallel test a
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
 claude plugin install regression-tests@regression-tests
 
-# 2. Verify install — should report skills/agents/hooks counts
+# 2. Verify install - should report skills/agents/hooks counts
 claude plugin details regression-tests@regression-tests
 
 # 3. Run inside any Rust or C# repo with a clean baseline
@@ -91,7 +91,7 @@ Currently **Windows x86_64 only**. Cross-platform binaries (Linux, macOS) via a 
 
 ## Prerequisites
 
-**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/regression-tests.exe` is the only requirement — no toolchain needed.
+**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/regression-tests.exe` is the only requirement - no toolchain needed.
 
 **For full multi-phase regression testing on a Rust project under test**:
 
@@ -118,18 +118,18 @@ The skills shell out to these tools when present and degrade gracefully when abs
 
 * **Rust toolchain** (`rustup` with `stable-x86_64-pc-windows-msvc`). Verify with `cargo --version` and `rustc --version`.
 * **MSVC C++ Build Tools** + **Windows SDK** (Visual Studio Installer → Individual Components → "Windows 11 SDK" and "MSVC v143 build tools"). Required for `link.exe` and `kernel32.lib` during `cargo build`. See [CLAUDE.md](CLAUDE.md#toolchain-bootstrap-windows) for the vcvars bootstrap snippet.
-* **`rustup component add rust-analyzer`** — only if you also have the `rust-analyzer-lsp` Claude Code plugin enabled. Without this component, the rustup proxy crashes when the LSP starts.
+* **`rustup component add rust-analyzer`** - only if you also have the `rust-analyzer-lsp` Claude Code plugin enabled. Without this component, the rustup proxy crashes when the LSP starts.
 
 ## Install
 
-**Recommended** — via Claude plugin marketplace:
+**Recommended** - via Claude plugin marketplace:
 
 ```bash
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
 claude plugin install regression-tests@regression-tests
 ```
 
-**Local dev** — point Claude Code at a checkout:
+**Local dev** - point Claude Code at a checkout:
 
 ```bash
 claude --plugin-dir ~/Code/regression-tests-plugin
