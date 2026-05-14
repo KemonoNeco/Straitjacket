@@ -77,7 +77,7 @@ The plugin's `UserPromptExpansion` hook fires on the slash-command invocation an
 2. **Stack detection.** Run `regression-tests detect-stack --repo-root <repo_root>`. Output: `rust` | `csharp` | `both` | `none`. If `none`, abort with "no supported stack found."
 
 3. **Tooling check.** For each detected stack, probe for tools:
-   - Rust: `cargo-mutants` (`cargo mutants --version`), `cargo-fuzz` (`cargo fuzz --version`), `cargo-llvm-cov` (`cargo llvm-cov --version`).
+   - Rust: `cargo-mutants` (`cargo mutants --version`), `cargo-fuzz` (probe via `cargo fuzz --version 2>&1 | <discard>` or `cargo fuzz list 2>&1`; **never** call `cargo fuzz --version` with a live stdout to a terminal — cargo-fuzz v0.13.1 pulls in `is-terminal v0.4.1` which panics on certain Windows console widths during terminal-width probing, so use redirected output or treat the "could not read fuzz/Cargo.toml" error from `cargo fuzz list` as "installed"), `cargo-llvm-cov` (`cargo llvm-cov --version`).
    - C#: `dotnet stryker --version`, `sharpfuzz --version`, `reportgenerator`.
    - Record presence/absence in `<run_id>/tooling.json`. Missing tools → degrade gracefully:
      - Mutation tooling absent → adversarial Phase 4a runs static-only.
@@ -142,7 +142,9 @@ For each chunk, build a prompt header containing:
 
 **Spawn every author chunk in a single message** — one `Agent` tool-use block per chunk, all in parallel.
 
-The plugin's PostToolUse hook automatically runs `verify-no-test-mutation` and `verify-new-tests-compile` after each author returns. If the hook blocks, the diagnostic comes back to you for retry; re-dispatch the failing units with the diagnostic inlined. Allow one retry per unit; after that, mark `status: quarantined`.
+The plugin's PostToolUse hook automatically runs `verify-new-tests-compile` after each author returns. If the hook blocks (compile failure), the diagnostic comes back to you for retry; re-dispatch the failing units with the diagnostic inlined. Allow one retry per unit; after that, mark `status: quarantined`.
+
+After all author chunks have returned, run `regression-tests verify-no-test-mutation --repo-root <repo_root> --snapshot-file <run_id>/test-snapshot.json` ONCE as an end-of-phase audit. Surface any reported violations in the run summary — these are pre-existing test files that an author touched against the prompt rule. They do not block iteration (the adversarial-vacuousness specialist re-checks the test corpus in Phase 4a), but they are noteworthy.
 
 Merge author results into `work-units.json`. For each successful unit, set `status: written` and confirm `output_test_name`.
 

@@ -32,6 +32,18 @@ After that:
 
 For the LSP integration (if `rust-analyzer-lsp` plugin is enabled): `rustup component add rust-analyzer`. The rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 without the component, surfacing as a Claude plugin LSP crash.
 
+## Optional dev tooling for dogfooding regression-tests/tdd on this crate
+
+The skills in this plugin shell out to mutation/fuzz/coverage tools when present and degrade gracefully when absent (see `Phase 1 step 3` in either SKILL.md). For an end-to-end run against this crate's own Rust source, install:
+
+- `cargo install cargo-mutants --locked` — enables Phase 4a real mutation runners. Currently installed: v27.0.0. Absent → adversarial pass is static-only.
+- `cargo install cargo-fuzz --locked` + `rustup toolchain install nightly` — enables Phase 4b fuzz harness/runners. Nightly is mandatory because libFuzzer instrumentation is nightly-only. Currently installed: cargo-fuzz v0.13.1; nightly rustc 1.97.0 (2026-05-12). Absent → Phase 4b skipped.
+- `cargo install cargo-llvm-cov --locked` — enables Phase 5 coverage delta. Currently installed: v0.8.4.
+
+Cosmetic gotcha: `cargo fuzz --version` panics on some Windows consoles because cargo-fuzz v0.13.1 pulls in `is-terminal v0.4.1` (range-out-of-bounds in terminal-width probing). The panic is harmless — `cargo fuzz init` and `cargo fuzz run` are unaffected. Use `cargo fuzz --version 2>&1 | Out-File ...` to read the version if needed.
+
+C# equivalents (for dogfooding the C# code path of this plugin, not the plugin itself which is Rust-only): `dotnet tool install -g dotnet-stryker`, `dotnet tool install -g SharpFuzz.CommandLine`, `dotnet tool install -g dotnet-reportgenerator-globaltool`.
+
 ## Architecture: where the work lives
 
 Five layers, each with a different cardinal rule:
@@ -44,7 +56,7 @@ Five layers, each with a different cardinal rule:
 
 4. **`skills/regression-tests/SKILL.md`** and **`skills/tdd/SKILL.md`** — orchestrator playbooks. The main Claude session executes every phase; specialists are dispatched via `Agent` tool calls. **Cardinal Rule 0 (from both SKILL.md files): you never write test code yourself** — that's the multi-agent collapse failure mode the skills exist to prevent. If you find yourself reaching for Write/Edit on a `_test.rs` or `Tests.cs`, stop and dispatch the appropriate `unit-test-author` / `integration-test-author` / `implementation-author`. The only files the orchestrator writes are `work-units.json`, `tooling.json`, scaffolded test projects, and the final summary.
 
-5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `regression-tests preflight` on skill invocation; `PreToolUse Agent` runs `regression-tests hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `regression-tests hook post-agent` (dispatches `verify-no-test-mutation` / `verify-new-tests-compile` / `run-new-tests` per `subagent_type`). Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`.
+5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `regression-tests preflight` on skill invocation; `PreToolUse Agent` runs `regression-tests hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `regression-tests hook post-agent` (dispatches `verify-new-tests-compile` after test authors, plus `run-new-tests` after `implementation-author`). `verify-no-test-mutation` is deliberately NOT a per-author hook — it produced false positives on Rust source files with inline `#[cfg(test)] mod tests`; the orchestrator runs it once at end-of-phase as an audit and relies on `adversarial-vacuousness` / `adversarial-misalignment` specialists for primary cheat detection. Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`.
 
 The Rust binary is also the *hook executor* — `regression-tests hook <event>` reads stdin JSON, decides via pure functions in `hook.rs`, and emits the Claude-expected response shape. Decision logic is unit-tested; the hook shell is thin.
 

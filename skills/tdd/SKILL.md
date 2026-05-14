@@ -35,7 +35,7 @@ Same eleven agents as the `regression-tests` skill, plus `implementation-author`
 4. **The adversarial specialists never see the diff or transcripts.** The PreToolUse hook scans prompts; defense-in-depth applies.
 5. **Parallel spawns go in a single message.**
 6. **JSON parse failures: retry once, then abort that unit.**
-7. **Tests are read-only after Phase 3.** The implementation-author in Phase 5 must NOT modify tests; the post-impl hook re-runs verify-no-test-mutation to enforce this.
+7. **Tests are read-only after Phase 3.** The implementation-author in Phase 5 must NOT modify tests. Enforced by: (a) explicit prompt rule passed to implementation-author with the test-snapshot file; (b) the adversarial-misalignment specialist in Phase 6 verifies tests still encode the locked `intended_behavior` contract; (c) the orchestrator runs `verify-no-test-mutation` once at end-of-Phase-5 as an audit and surfaces any drift in the run summary. There is no per-author SHA hook — that produced false positives on idiomatic Rust source files (which embed `#[cfg(test)] mod tests`).
 
 ## Preflight
 
@@ -88,12 +88,11 @@ For each chunk, build the prompt header:
 
 **Spawn all author chunks in a single message** with parallel `Agent` blocks. `subagent_type: "unit-test-author"` for unit-kind, `"integration-test-author"` for integration-kind.
 
-The PostToolUse hook automatically runs:
-1. `verify-no-test-mutation` against the snapshot.
-2. `verify-new-tests-compile` — compile must succeed.
+The PostToolUse hook automatically runs `verify-new-tests-compile` — compile must succeed. If it blocks, the diagnostic is fed back for retry (one retry per unit, then quarantine).
 
-Then YOU run:
-3. `regression-tests run-new-tests --repo-root <repo_root> --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id> --expect fail` — the TDD red-check. Each test should FAIL at runtime (stub panics). Tests that PASS at this stage are vacuous (passing without an implementation = bad test). Classification:
+After all author chunks return, YOU run:
+1. `regression-tests verify-no-test-mutation --repo-root <repo_root> --snapshot-file <run_id>/test-snapshot.json` — end-of-phase audit. Any reported drift gets surfaced in the run summary (does not block the phase; the adversarial-misalignment specialist in Phase 4 cross-checks).
+2. `regression-tests run-new-tests --repo-root <repo_root> --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id> --expect fail` — the TDD red-check. Each test should FAIL at runtime (stub panics). Tests that PASS at this stage are vacuous (passing without an implementation = bad test). Classification:
    - `red_ok` → keep.
    - `vacuous_pre_impl` → re-dispatch the author with a sharper prompt naming the vacuous test.
 
@@ -136,6 +135,8 @@ The PostToolUse hook automatically runs:
 2. `regression-tests run-new-tests --expect pass` — tests must now pass.
 
 If tests still fail, re-dispatch the failing implementation-author with the failing-test output for one retry. After that, mark the unit `status: surfaced_bug` (the implementation could not satisfy the contract — investigate manually).
+
+After all impl-author chunks return, YOU run `regression-tests verify-no-test-mutation --repo-root <repo_root> --snapshot-file <run_id>/test-snapshot.json` ONCE as an end-of-phase audit. Implementation-author is the highest-risk role for test-mutation cheats (a failing test is a direct incentive to weaken the test instead of fixing impl). If the audit reports drift, surface in the run summary; the Phase 6 adversarial-misalignment specialist also re-checks tests against the locked `intended_behavior`.
 
 Successful units get `status: implemented`.
 

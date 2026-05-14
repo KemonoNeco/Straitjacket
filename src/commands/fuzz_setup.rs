@@ -1,5 +1,5 @@
 use crate::common::Stack;
-use crate::common::walk::walk_source_files;
+use crate::common::walk::{keep_entry, walk_source_files, SOURCE_TREE_EXCLUDES};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,17 +54,7 @@ pub fn find_rust_crates(repo_root: &Path) -> std::io::Result<Vec<RustCrateInfo>>
     let mut out = Vec::new();
     for entry in WalkDir::new(repo_root)
         .into_iter()
-        .filter_entry(|e| {
-            if e.depth() == 0 {
-                return true;
-            }
-            if e.file_type().is_dir() {
-                if let Some(n) = e.file_name().to_str() {
-                    return n != "target";
-                }
-            }
-            true
-        })
+        .filter_entry(|e| keep_entry(e, SOURCE_TREE_EXCLUDES))
         .filter_map(|r| r.ok())
     {
         if entry.file_type().is_file() && entry.file_name().to_str() == Some("Cargo.toml") {
@@ -123,7 +113,7 @@ pub fn probe_fuzz_setup(repo_root: &Path, stack: Stack) -> anyhow::Result<FuzzSe
     let csharp = if matches!(stack, Stack::Csharp | Stack::Both) {
         let sharpfuzz_available = probe_tool("sharpfuzz", "--version");
         let csproj_paths =
-            walk_source_files(repo_root, &["bin", "obj"], &["csproj"]).unwrap_or_default();
+            walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["csproj"]).unwrap_or_default();
         let note = if sharpfuzz_available {
             "SharpFuzz detected; harness author may proceed.".to_string()
         } else {
