@@ -1,5 +1,5 @@
 use crate::common::Stack;
-use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
+use crate::common::walk::{keep_entry, walk_source_files, SOURCE_TREE_EXCLUDES};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -54,17 +54,7 @@ pub fn find_rust_crates(repo_root: &Path) -> std::io::Result<Vec<RustCrateInfo>>
     let mut out = Vec::new();
     for entry in WalkDir::new(repo_root)
         .into_iter()
-        .filter_entry(|e| {
-            if e.depth() == 0 {
-                return true;
-            }
-            if e.file_type().is_dir() {
-                if let Some(n) = e.file_name().to_str() {
-                    return !SOURCE_TREE_EXCLUDES.contains(&n);
-                }
-            }
-            true
-        })
+        .filter_entry(|e| keep_entry(e, SOURCE_TREE_EXCLUDES))
         .filter_map(|r| r.ok())
     {
         if entry.file_type().is_file() && entry.file_name().to_str() == Some("Cargo.toml") {

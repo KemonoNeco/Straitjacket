@@ -1,4 +1,4 @@
-use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
+use crate::common::walk::{keep_entry, walk_source_files, SOURCE_TREE_EXCLUDES};
 use crate::common::Stack;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -57,17 +57,7 @@ fn find_named_files(
 ) -> std::io::Result<Vec<PathBuf>> {
     let mut out: Vec<PathBuf> = WalkDir::new(root)
         .into_iter()
-        .filter_entry(|e| {
-            if e.depth() == 0 {
-                return true;
-            }
-            if e.file_type().is_dir() {
-                if let Some(n) = e.file_name().to_str() {
-                    return !excluded_dir_names.contains(&n);
-                }
-            }
-            true
-        })
+        .filter_entry(|e| keep_entry(e, excluded_dir_names))
         .filter_map(|r| r.ok())
         .filter(|e| e.file_type().is_file())
         .filter(|e| e.file_name().to_str() == Some(name))

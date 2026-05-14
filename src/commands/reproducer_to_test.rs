@@ -1,3 +1,4 @@
+use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
 use crate::common::Stack;
 use anyhow::{anyhow, Context};
 use chrono::Utc;
@@ -261,7 +262,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 // Find first *.Tests / *.Test project under repo_root and place under its
                 // FuzzRegressions/ subdir.
                 let csproj =
-                    crate::common::walk::walk_source_files(&args.repo_root, crate::common::walk::SOURCE_TREE_EXCLUDES, &["csproj"])?
+                    walk_source_files(&args.repo_root, SOURCE_TREE_EXCLUDES, &["csproj"])?
                         .into_iter()
                         .find(|p| {
                             p.file_stem()

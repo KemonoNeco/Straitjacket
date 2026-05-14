@@ -1,5 +1,5 @@
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use walkdir::{DirEntry, WalkDir};
 
 /// Canonical set of directory names that should never be descended into when walking
 /// a project tree for source/manifest files. Covers build outputs (`target`, `bin`,
@@ -16,6 +16,26 @@ pub const SOURCE_TREE_EXCLUDES: &[&str] = &[
     ".claude",
     ".claude-regression",
 ];
+
+/// Predicate for `WalkDir::filter_entry`: returns `true` if `entry` should be descended
+/// into (and yielded). Always keeps the depth-0 root; prunes any directory whose name
+/// matches `excluded_dir_names`; passes through all files.
+///
+/// This is the shared closure body for every project-tree walk in the crate. Use as
+/// `.filter_entry(|e| keep_entry(e, EXCLUDES))` to enforce descent-time pruning — a
+/// post-walk `.filter()` over the same names would still descend into `target/` and
+/// read every file (the 4-minute snapshot bug the prune is meant to prevent).
+pub fn keep_entry(entry: &DirEntry, excluded_dir_names: &[&str]) -> bool {
+    if entry.depth() == 0 {
+        return true;
+    }
+    if entry.file_type().is_dir() {
+        if let Some(name) = entry.file_name().to_str() {
+            return !excluded_dir_names.contains(&name);
+        }
+    }
+    true
+}
 
 /// Walks `root` and returns every file path whose extension matches one of `extensions`
 /// (compared lowercase-insensitively, no leading `.`).
@@ -41,17 +61,7 @@ pub fn walk_source_files(
 
     let mut out: Vec<PathBuf> = WalkDir::new(root)
         .into_iter()
-        .filter_entry(|entry| {
-            if entry.depth() == 0 {
-                return true;
-            }
-            if entry.file_type().is_dir() {
-                if let Some(name) = entry.file_name().to_str() {
-                    return !excluded_dir_names.contains(&name);
-                }
-            }
-            true
-        })
+        .filter_entry(|entry| keep_entry(entry, excluded_dir_names))
         .filter_map(|res| res.ok())
         .filter(|entry| entry.file_type().is_file())
         .filter(|entry| {
@@ -178,5 +188,40 @@ mod tests {
         touch(&root.join("c.txt"));
         let result = walk_source_files(root, &[], &["rs", "cs"]).unwrap();
         assert_eq!(result.len(), 2, "rs+cs should match both: {:?}", result);
+    }
+
+    /// Locks the keep_entry contract directly so the three callers
+    /// (`walk_source_files`, `detect_stack::find_named_files`,
+    /// `fuzz_setup::find_rust_crates`) share a single tested predicate.
+    #[test]
+    fn keep_entry_always_keeps_root_prunes_excluded_dirs_passes_files() {
+        let td = TempDir::new().unwrap();
+        let root = td.path();
+        // Build: root/{keep_dir, skip_dir, file.rs}/...
+        fs::create_dir_all(root.join("keep_dir")).unwrap();
+        fs::create_dir_all(root.join("skip_dir")).unwrap();
+        touch(&root.join("file.rs"));
+        touch(&root.join("keep_dir").join("nested.rs"));
+
+        let excludes = ["skip_dir"];
+        let entries: Vec<_> = WalkDir::new(root)
+            .into_iter()
+            .filter_entry(|e| keep_entry(e, &excludes))
+            .filter_map(|r| r.ok())
+            .collect();
+        let names: Vec<String> = entries
+            .iter()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+
+        assert!(
+            names.iter().any(|n| n == &root.file_name().unwrap().to_string_lossy()),
+            "depth-0 root must be kept regardless of excludes: {:?}",
+            names
+        );
+        assert!(names.iter().any(|n| n == "keep_dir"), "non-excluded dirs kept: {:?}", names);
+        assert!(names.iter().any(|n| n == "file.rs"), "files always passed: {:?}", names);
+        assert!(names.iter().any(|n| n == "nested.rs"), "files in non-excluded dirs reached: {:?}", names);
+        assert!(!names.iter().any(|n| n == "skip_dir"), "excluded dir not descended: {:?}", names);
     }
 }
