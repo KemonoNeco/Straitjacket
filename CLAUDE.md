@@ -10,27 +10,62 @@ Read `README.md` for end-user info. The plan that drove the build lives at `~/.c
 
 ## Build / test commands
 
-**Toolchain dependency on this Windows machine:** `cargo` requires MSVC link.exe + Windows SDK + vcvars sourced. Use this wrapper at the top of every cargo invocation; otherwise you'll hit `link: extra operand` (Git Bash's link.exe gets picked up) or `LNK1181: cannot open kernel32.lib` (Windows SDK paths missing). The Visual Studio Installer dir must be on PATH *before* vcvars runs, because vcvars64.bat shells out to vswhere.exe.
+### Toolchain bootstrap (Windows)
+
+**Cargo requires MSVC `link.exe` + Windows SDK + vcvars sourced.** Without it, `cargo build` fails one of two ways:
+
+- `link: extra operand` - Git Bash's `link.exe` shadows the MSVC linker on PATH
+- `LNK1181: cannot open kernel32.lib` - Windows SDK lib paths absent from the env
+
+Source the environment at the top of every Cargo invocation:
 
 ```powershell
+# Installer dir on PATH BEFORE vcvars runs - vcvars64.bat shells out to vswhere.exe
 $installerDir = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer'
 $env:PATH = "$installerDir;$env:PATH"
+
+# Source vcvars64.bat into the current PowerShell session
 $vcvars = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat'
 cmd.exe /c "`"$vcvars`" >NUL 2>&1 && set" | ForEach-Object {
     if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($matches[1])" -Value $matches[2] }
 }
+
+# Prevent MSBuild node-reuse from holding files open across builds
 $env:MSBUILDDISABLENODEREUSE = '1'
 ```
 
-After that:
+> Claude note: The Installer-dir-before-vcvars ordering is load-bearing. `vcvars64.bat` calls `vswhere.exe` internally to locate the active VS install; if `vswhere` isn't on PATH first, vcvars silently picks the wrong toolchain (or none) and the resulting env is incomplete.
 
-- `cargo check --all-targets` — fast type-check.
-- `cargo clippy --all-targets -- -D warnings` — lint gate (must be clean).
-- `cargo test --lib` — run the unit/integration tests embedded in each module's `#[cfg(test)] mod tests`. ~116 tests, runs in ~3 seconds after first build.
-- `cargo test --lib commands::detect_stack` — run a single module's tests by qualified path. (Cargo `test` takes one filter positional; can't pass two module paths.)
-- `cargo build --release` then `cp target/release/regression-tests.exe bin/regression-tests.exe` — produce the shipped binary. `bin/` IS committed; `target/` is not.
+### Standard commands
 
-For the LSP integration (if `rust-analyzer-lsp` plugin is enabled): `rustup component add rust-analyzer`. The rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 without the component, surfacing as a Claude plugin LSP crash.
+After bootstrap:
+
+- `cargo check --all-targets` - Fast type-check, no codegen
+- `cargo clippy --all-targets -- -D warnings` - Lint gate, must be clean
+- `cargo test --lib` - Runs the ~116 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
+- `cargo test --lib commands::detect_stack` - Single-module run by qualified path
+
+> Claude note: Cargo `test` takes exactly one filter positional - you can't pass two module paths in the same invocation. To run two modules, run two commands.
+
+### Shipping the binary
+
+```bash
+cargo build --release
+cp target/release/regression-tests.exe bin/regression-tests.exe
+```
+
+- `bin/regression-tests.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
+- `target/` is gitignored
+
+### LSP integration
+
+If the `rust-analyzer-lsp` plugin is enabled, install the component:
+
+```bash
+rustup component add rust-analyzer
+```
+
+> Claude note: The rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 when the component isn't installed - this surfaces as a Claude plugin LSP crash rather than a missing-binary error, so it's easy to misdiagnose.
 
 ## Optional dev tooling for dogfooding regression-tests/tdd on this crate
 
