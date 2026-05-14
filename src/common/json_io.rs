@@ -15,6 +15,23 @@ pub fn read_json_file<T: DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
     Ok(value)
 }
 
+/// Extracts a `Vec<serde_json::Value>` of work-units from a parsed JSON value, accepting
+/// either a bare top-level array OR the orchestrator's `{"work_units": [...], ...}` wrapper
+/// shape. Any other shape (or an Object whose `work_units` field is missing or not an array)
+/// yields an empty Vec — callers that need a hard error on unrecognized shapes must check
+/// the result themselves.
+pub fn parse_work_units_array(value: &serde_json::Value) -> Vec<serde_json::Value> {
+    match value {
+        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Object(o) => o
+            .get("work_units")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default(),
+        _ => Vec::new(),
+    }
+}
+
 /// Writes `value` as pretty-printed JSON to `path`, UTF-8 encoded, terminated by a newline.
 /// Creates parent directories if missing. Overwrites if the file exists.
 pub fn write_json_file<T: Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
@@ -139,6 +156,64 @@ mod tests {
             "expected indented field, got: {:?}",
             content
         );
+    }
+
+    #[test]
+    fn parse_work_units_array_accepts_bare_array_shape() {
+        let v = serde_json::json!([
+            {"id": "a", "status": "written"},
+            {"id": "b", "status": "pending"}
+        ]);
+        let arr = parse_work_units_array(&v);
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0]["id"], "a");
+        assert_eq!(arr[1]["id"], "b");
+    }
+
+    #[test]
+    fn parse_work_units_array_accepts_wrapper_object_shape() {
+        // The coverage-reviewer agent's documented response shape.
+        let v = serde_json::json!({
+            "work_units": [
+                {"id": "inner-a", "status": "written"},
+                {"id": "inner-b", "status": "pending"}
+            ],
+            "scope_summary": "wrapper-level metadata that must not be treated as a unit"
+        });
+        let arr = parse_work_units_array(&v);
+        assert_eq!(
+            arr.len(),
+            2,
+            "wrapper object's `work_units` inner array must be extracted; got: {arr:?}"
+        );
+        assert_eq!(arr[0]["id"], "inner-a");
+        assert_eq!(arr[1]["id"], "inner-b");
+    }
+
+    #[test]
+    fn parse_work_units_array_returns_empty_for_object_without_work_units_key() {
+        // Object shape but no `work_units` key — caller must not see the whole object
+        // treated as a single status-less unit.
+        let v = serde_json::json!({"unrelated": "object", "scope_summary": "x"});
+        let arr = parse_work_units_array(&v);
+        assert!(
+            arr.is_empty(),
+            "object without `work_units` key must yield empty Vec, got: {arr:?}"
+        );
+    }
+
+    #[test]
+    fn parse_work_units_array_returns_empty_for_unrecognized_scalar_shape() {
+        // A bare scalar (string/number/null/bool) must not blow up; just empty.
+        for v in [
+            serde_json::json!("not a structure"),
+            serde_json::json!(42),
+            serde_json::json!(null),
+            serde_json::json!(true),
+        ] {
+            let arr = parse_work_units_array(&v);
+            assert!(arr.is_empty(), "scalar {v:?} must yield empty Vec, got: {arr:?}");
+        }
     }
 
     /// Adversarial-review #wu-jsonio-001 (LOW): UTF-8 multibyte round-trip.

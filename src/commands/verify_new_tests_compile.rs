@@ -1,4 +1,4 @@
-use crate::common::json_io::read_json_file;
+use crate::common::json_io::{parse_work_units_array, read_json_file};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
 use anyhow::Context;
@@ -118,10 +118,7 @@ pub fn verify_new_tests_compile(
 
     let work_units: serde_json::Value = read_json_file(work_units_file)
         .with_context(|| format!("read {}", work_units_file.display()))?;
-    let units_array = work_units
-        .as_array()
-        .cloned()
-        .unwrap_or_else(|| vec![work_units.clone()]);
+    let units_array = parse_work_units_array(&work_units);
 
     let candidates: Vec<UnitInfo> = units_array
         .iter()
@@ -398,6 +395,52 @@ mod tests {
             result.per_unit_results.is_empty(),
             "per_unit_results must be empty when the missing-file entry is filtered out; got {:?}",
             result.per_unit_results
+        );
+    }
+
+    /// verify_new_tests_compile must accept the coverage-reviewer's wrapper-object shape
+    /// `{"work_units": [...], "scope_summary": ...}` without treating the wrapper itself
+    /// as a single status-less unit. With no cargo project present, the fixed code drops
+    /// the candidate during grouping; the BROKEN code would also produce an empty result
+    /// — so this smoke test only proves Ok-and-empty for the wrapper shape, and relies on
+    /// `parse_work_units_array`'s own unit tests (see `common/json_io.rs`) for the
+    /// shape-detection contract.
+    #[test]
+    fn test_verify_new_tests_compile_accepts_work_units_wrapper_shape_without_panic() {
+        let td = TempDir::new().unwrap();
+        let repo_root = td.path();
+
+        let work_units_json = serde_json::json!({
+            "work_units": [
+                {
+                    "id": "deadbeef-1111-1111-1111-111111111111",
+                    "status": "written",
+                    "output_file_path": "src/does_not_exist.rs"
+                }
+            ],
+            "scope_summary": "wrapper-level metadata"
+        });
+        let work_units_file = repo_root.join("work-units.json");
+        fs::write(
+            &work_units_file,
+            serde_json::to_string_pretty(&work_units_json).unwrap(),
+        )
+        .unwrap();
+
+        let log_dir = repo_root.join("logs");
+
+        let result = verify_new_tests_compile(
+            repo_root,
+            &work_units_file,
+            Stack::Rust,
+            &log_dir,
+        )
+        .expect("verify_new_tests_compile must return Ok for wrapper-shape work-units.json");
+
+        assert!(
+            result.all_passed,
+            "no real candidates → all_passed must be true, got {:?}",
+            result
         );
     }
 }

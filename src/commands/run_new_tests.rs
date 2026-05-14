@@ -1,4 +1,4 @@
-use crate::common::json_io::read_json_file;
+use crate::common::json_io::{parse_work_units_array, read_json_file};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
 use regex::Regex;
@@ -155,16 +155,7 @@ struct NewUnit {
 
 fn collect_new_units(work_units_file: &Path) -> anyhow::Result<Vec<NewUnit>> {
     let v: serde_json::Value = read_json_file(work_units_file)?;
-    // Accept both shapes: bare array, OR `{"work_units": [...]}` wrapper from the orchestrator.
-    let arr: Vec<serde_json::Value> = match &v {
-        serde_json::Value::Array(a) => a.clone(),
-        serde_json::Value::Object(o) => o
-            .get("work_units")
-            .and_then(|x| x.as_array())
-            .cloned()
-            .unwrap_or_default(),
-        _ => Vec::new(),
-    };
+    let arr = parse_work_units_array(&v);
     let mut out = Vec::new();
     for u in arr {
         let status = u.get("status").and_then(|s| s.as_str()).unwrap_or("");
@@ -525,5 +516,44 @@ mod tests {
 
         assert_eq!(units.len(), 1);
         assert_eq!(units[0].id, "unit-written");
+    }
+
+    /// Lock the wrapper-object acceptance: `{"work_units": [...], "scope_summary": ...}`
+    /// must yield the units from the inner array, not zero units (which would silently
+    /// green-wash Phase 5).
+    #[test]
+    fn test_collect_new_units_accepts_orchestrator_wrapper_object_shape() {
+        let wrapper = serde_json::json!({
+            "work_units": [
+                {
+                    "id": "inner-written",
+                    "status": "written",
+                    "output_test_name": "test_inner",
+                    "output_file_path": "src/foo.rs"
+                },
+                {
+                    "id": "inner-pending",
+                    "status": "pending",
+                    "output_test_name": "test_pending",
+                    "output_file_path": "src/foo.rs"
+                }
+            ],
+            "scope_summary": "wrapper metadata that must NOT be treated as a unit"
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, wrapper.to_string()).unwrap();
+
+        let units = collect_new_units(&path).unwrap();
+
+        // Only the `written` entry from the INNER array should be collected.
+        assert_eq!(
+            units.len(),
+            1,
+            "wrapper-shape work-units.json must extract its inner array; got: {:?}",
+            units.iter().map(|u| &u.id).collect::<Vec<_>>()
+        );
+        assert_eq!(units[0].id, "inner-written");
     }
 }
