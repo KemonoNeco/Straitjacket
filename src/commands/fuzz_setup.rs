@@ -93,6 +93,11 @@ pub fn find_rust_crates(repo_root: &Path) -> std::io::Result<Vec<RustCrateInfo>>
 
 pub fn probe_fuzz_setup(repo_root: &Path, stack: Stack) -> anyhow::Result<FuzzSetupResult> {
     let rust = if matches!(stack, Stack::Rust | Stack::Both) {
+        // Two-arm probe: `probe_tool` confirms the subcommand exists; the explicit
+        // `--version` confirms it actually runs. Stdout/stderr are nulled both to
+        // avoid noisy probe output AND to dodge the cargo-fuzz v0.13.1 / is-terminal
+        // v0.4.1 terminal-width panic on some Windows consoles (the redirected
+        // handles aren't classified as terminals, so the probe is skipped).
         let cargo_fuzz_available = probe_tool("cargo", "fuzz")
             && Command::new("cargo")
                 .args(["fuzz", "--version"])
