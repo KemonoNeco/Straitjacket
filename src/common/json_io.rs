@@ -15,20 +15,19 @@ pub fn read_json_file<T: DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
     Ok(value)
 }
 
-/// Extracts a `Vec<serde_json::Value>` of work-units from a parsed JSON value, accepting
-/// either a bare top-level array OR the orchestrator's `{"work_units": [...], ...}` wrapper
-/// shape. Any other shape (or an Object whose `work_units` field is missing or not an array)
-/// yields an empty Vec — callers that need a hard error on unrecognized shapes must check
-/// the result themselves.
-pub fn parse_work_units_array(value: &serde_json::Value) -> Vec<serde_json::Value> {
+/// Extracts a borrowed slice of work-units from a parsed JSON value, accepting either a
+/// bare top-level array OR the orchestrator's `{"work_units": [...], ...}` wrapper shape.
+/// Returns `None` for any other shape (including an Object whose `work_units` field is
+/// missing or not an array, scalars, etc.) so callers can choose: map `None` to `&[]` for
+/// silent-accept, or map `None` to an error for strict-accept.
+pub fn parse_work_units_array(value: &serde_json::Value) -> Option<&[serde_json::Value]> {
     match value {
-        serde_json::Value::Array(a) => a.clone(),
+        serde_json::Value::Array(a) => Some(a.as_slice()),
         serde_json::Value::Object(o) => o
             .get("work_units")
             .and_then(|x| x.as_array())
-            .cloned()
-            .unwrap_or_default(),
-        _ => Vec::new(),
+            .map(|a| a.as_slice()),
+        _ => None,
     }
 }
 
@@ -164,7 +163,7 @@ mod tests {
             {"id": "a", "status": "written"},
             {"id": "b", "status": "pending"}
         ]);
-        let arr = parse_work_units_array(&v);
+        let arr = parse_work_units_array(&v).expect("bare array must yield Some");
         assert_eq!(arr.len(), 2);
         assert_eq!(arr[0]["id"], "a");
         assert_eq!(arr[1]["id"], "b");
@@ -180,7 +179,7 @@ mod tests {
             ],
             "scope_summary": "wrapper-level metadata that must not be treated as a unit"
         });
-        let arr = parse_work_units_array(&v);
+        let arr = parse_work_units_array(&v).expect("wrapper object must yield Some");
         assert_eq!(
             arr.len(),
             2,
@@ -191,20 +190,20 @@ mod tests {
     }
 
     #[test]
-    fn parse_work_units_array_returns_empty_for_object_without_work_units_key() {
+    fn parse_work_units_array_returns_none_for_object_without_work_units_key() {
         // Object shape but no `work_units` key — caller must not see the whole object
-        // treated as a single status-less unit.
+        // treated as a single status-less unit. None lets strict callers raise.
         let v = serde_json::json!({"unrelated": "object", "scope_summary": "x"});
         let arr = parse_work_units_array(&v);
         assert!(
-            arr.is_empty(),
-            "object without `work_units` key must yield empty Vec, got: {arr:?}"
+            arr.is_none(),
+            "object without `work_units` key must yield None, got: {arr:?}"
         );
     }
 
     #[test]
-    fn parse_work_units_array_returns_empty_for_unrecognized_scalar_shape() {
-        // A bare scalar (string/number/null/bool) must not blow up; just empty.
+    fn parse_work_units_array_returns_none_for_unrecognized_scalar_shape() {
+        // A bare scalar (string/number/null/bool) must not blow up; just None.
         for v in [
             serde_json::json!("not a structure"),
             serde_json::json!(42),
@@ -212,7 +211,7 @@ mod tests {
             serde_json::json!(true),
         ] {
             let arr = parse_work_units_array(&v);
-            assert!(arr.is_empty(), "scalar {v:?} must yield empty Vec, got: {arr:?}");
+            assert!(arr.is_none(), "scalar {v:?} must yield None, got: {arr:?}");
         }
     }
 

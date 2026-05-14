@@ -155,7 +155,9 @@ struct NewUnit {
 
 fn collect_new_units(work_units_file: &Path) -> anyhow::Result<Vec<NewUnit>> {
     let v: serde_json::Value = read_json_file(work_units_file)?;
-    let arr = parse_work_units_array(&v);
+    // Silent-accept: an unrecognized shape becomes an empty slice. Strict shape errors
+    // would belong in the orchestrator's preflight, not here in Phase 5.
+    let arr = parse_work_units_array(&v).unwrap_or(&[]);
     let mut out = Vec::new();
     for u in arr {
         let status = u.get("status").and_then(|s| s.as_str()).unwrap_or("");
