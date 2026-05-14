@@ -1,6 +1,22 @@
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Canonical set of directory names that should never be descended into when walking
+/// a project tree for source/manifest files. Covers build outputs (`target`, `bin`,
+/// `obj`, `node_modules`), VCS metadata (`.git`), Claude Code per-project state
+/// (`.claude`, which can host git worktrees of unrelated projects), and this plugin's
+/// own per-run state (`.claude-regression`). Callers should combine this with any
+/// caller-specific extras rather than reinventing the list.
+pub const SOURCE_TREE_EXCLUDES: &[&str] = &[
+    "target",
+    "node_modules",
+    "bin",
+    "obj",
+    ".git",
+    ".claude",
+    ".claude-regression",
+];
+
 /// Walks `root` and returns every file path whose extension matches one of `extensions`
 /// (compared lowercase-insensitively, no leading `.`).
 ///

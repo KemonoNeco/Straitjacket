@@ -1,5 +1,5 @@
 {
-  "description": "Invariant enforcement for the regression-tests plugin. Three hooks: UserPromptExpansion runs preflight (baseline + lint) before the skill starts; PreToolUse on Agent scans adversarial-specialist prompts for diff leakage; PostToolUse on Agent dispatches verify-no-test-mutation / verify-new-tests-compile / run-new-tests based on subagent_type.",
+  "description": "Invariant enforcement for the regression-tests plugin. Three hooks: UserPromptExpansion runs preflight (baseline + lint) before the skill starts; PreToolUse on Agent scans adversarial-specialist prompts for diff leakage; PostToolUse on Agent dispatches verify-new-tests-compile and run-new-tests based on subagent_type. Test-mutation enforcement is handled at end-of-phase by the orchestrator (audit) plus the adversarial-vacuousness/misalignment specialists, not per-author.",
   "hooks": {
     "UserPromptExpansion": [
       {

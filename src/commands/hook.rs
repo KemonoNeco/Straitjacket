@@ -61,12 +61,20 @@ pub fn decide_pre_adversarial(prompt: &str) -> HookDecision {
 }
 
 /// Decides what post-tool checks to run after an Agent of the given subagent_type returns.
+///
+/// Note: `VerifyNoTestMutation` is intentionally NOT dispatched here. The snapshot
+/// file is consumed by author prompts as documentation ("do not modify these files"),
+/// and the orchestrator runs `verify-no-test-mutation` once at end-of-phase as an
+/// audit. The adversarial-vacuousness and adversarial-misalignment specialists are
+/// the primary defense against test-mutation cheats. Per-author SHA enforcement was
+/// removed because it produced false positives on idiomatic Rust source files
+/// (which embed `#[cfg(test)] mod tests`) without adding catch-power beyond the
+/// adversarial trio.
 pub fn decide_post_agent(subagent_type: &str) -> HookDecision {
     match subagent_type {
-        "unit-test-author" | "integration-test-author" => HookDecision::RunChecks(vec![
-            CheckKind::VerifyNoTestMutation,
-            CheckKind::VerifyNewTestsCompile,
-        ]),
+        "unit-test-author" | "integration-test-author" => {
+            HookDecision::RunChecks(vec![CheckKind::VerifyNewTestsCompile])
+        }
         "implementation-author" => HookDecision::RunChecks(vec![
             CheckKind::VerifyNewTestsCompile,
             CheckKind::RunNewTests,
@@ -218,27 +226,42 @@ mod tests {
     }
 
     #[test]
-    fn post_agent_unit_test_author_runs_mutation_plus_compile() {
+    fn post_agent_unit_test_author_runs_compile_only() {
         let d = decide_post_agent("unit-test-author");
         assert_eq!(
             d,
-            HookDecision::RunChecks(vec![
-                CheckKind::VerifyNoTestMutation,
-                CheckKind::VerifyNewTestsCompile,
-            ])
+            HookDecision::RunChecks(vec![CheckKind::VerifyNewTestsCompile])
         );
     }
 
     #[test]
-    fn post_agent_integration_test_author_runs_mutation_plus_compile() {
+    fn post_agent_integration_test_author_runs_compile_only() {
         let d = decide_post_agent("integration-test-author");
         assert_eq!(
             d,
-            HookDecision::RunChecks(vec![
-                CheckKind::VerifyNoTestMutation,
-                CheckKind::VerifyNewTestsCompile,
-            ])
+            HookDecision::RunChecks(vec![CheckKind::VerifyNewTestsCompile])
         );
+    }
+
+    #[test]
+    fn post_agent_never_dispatches_verify_no_test_mutation() {
+        // Regression guard: per-author test-mutation enforcement was removed in
+        // favor of an end-of-phase audit + adversarial-trio coverage. If a future
+        // change re-introduces it here, this test breaks loudly.
+        for st in [
+            "unit-test-author",
+            "integration-test-author",
+            "implementation-author",
+        ] {
+            let d = decide_post_agent(st);
+            if let HookDecision::RunChecks(checks) = d {
+                assert!(
+                    !checks.contains(&CheckKind::VerifyNoTestMutation),
+                    "{} should not dispatch VerifyNoTestMutation",
+                    st
+                );
+            }
+        }
     }
 
     #[test]

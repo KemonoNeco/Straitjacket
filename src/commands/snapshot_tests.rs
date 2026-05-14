@@ -1,5 +1,5 @@
 use crate::common::json_io::write_json_file;
-use crate::common::walk::walk_source_files;
+use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -37,18 +37,9 @@ pub struct TestSnapshot {
 /// manifest. Excluded dirs pruned at descent: `target`, `node_modules`,
 /// `bin`, `obj`, `.git`, `.claude-regression`.
 pub fn snapshot_test_files(repo_root: &Path) -> anyhow::Result<TestSnapshot> {
-    let excluded = [
-        "target",
-        "node_modules",
-        "bin",
-        "obj",
-        ".git",
-        ".claude-regression",
-    ];
-
-    let rs_files = walk_source_files(repo_root, &excluded, &["rs"])
+    let rs_files = walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["rs"])
         .with_context(|| format!("walk .rs files under {}", repo_root.display()))?;
-    let cs_files = walk_source_files(repo_root, &excluded, &["cs"])
+    let cs_files = walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["cs"])
         .with_context(|| format!("walk .cs files under {}", repo_root.display()))?;
 
     let mut detected: BTreeSet<PathBuf> = BTreeSet::new();
@@ -223,7 +214,7 @@ mod tests {
     #[test]
     fn files_under_excluded_dirs_are_ignored() {
         let td = TempDir::new().unwrap();
-        for excluded in ["target", "node_modules", "bin", "obj", ".git", ".claude-regression"] {
+        for excluded in SOURCE_TREE_EXCLUDES {
             write(
                 &td.path().join(excluded).join("trap.rs"),
                 "#[test] fn t() {}",

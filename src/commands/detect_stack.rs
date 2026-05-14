@@ -1,4 +1,4 @@
-use crate::common::walk::walk_source_files;
+use crate::common::walk::{walk_source_files, SOURCE_TREE_EXCLUDES};
 use crate::common::Stack;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -19,10 +19,8 @@ pub struct DetectStackResult {
 }
 
 /// Returns which stacks (rust, csharp, both, none) are present in `repo_root` along
-/// with the manifests found.
-///   - Rust: `Cargo.toml` at any depth, pruning `target/`.
-///   - C# projects: `*.csproj`, pruning `bin/`, `obj/`, `node_modules/`.
-///   - C# solutions: `*.sln`, no exclusions.
+/// with the manifests found. All walks prune the canonical `SOURCE_TREE_EXCLUDES` set
+/// (build outputs, VCS, Claude Code per-project state).
 pub fn detect_stack(repo_root: &Path) -> std::io::Result<DetectStackResult> {
     if !repo_root.exists() {
         return Err(std::io::Error::new(
@@ -30,10 +28,9 @@ pub fn detect_stack(repo_root: &Path) -> std::io::Result<DetectStackResult> {
             format!("repo_root not found: {}", repo_root.display()),
         ));
     }
-    let rust_manifests = find_named_files(repo_root, "Cargo.toml", &["target"])?;
-    let csharp_projects =
-        walk_source_files(repo_root, &["bin", "obj", "node_modules"], &["csproj"])?;
-    let csharp_solutions = walk_source_files(repo_root, &[], &["sln"])?;
+    let rust_manifests = find_named_files(repo_root, "Cargo.toml", SOURCE_TREE_EXCLUDES)?;
+    let csharp_projects = walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["csproj"])?;
+    let csharp_solutions = walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["sln"])?;
 
     let has_rust = !rust_manifests.is_empty();
     let has_csharp = !csharp_projects.is_empty() || !csharp_solutions.is_empty();

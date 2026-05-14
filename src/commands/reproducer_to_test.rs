@@ -261,7 +261,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
                 // Find first *.Tests / *.Test project under repo_root and place under its
                 // FuzzRegressions/ subdir.
                 let csproj =
-                    crate::common::walk::walk_source_files(&args.repo_root, &["bin", "obj"], &["csproj"])?
+                    crate::common::walk::walk_source_files(&args.repo_root, crate::common::walk::SOURCE_TREE_EXCLUDES, &["csproj"])?
                         .into_iter()
                         .find(|p| {
                             p.file_stem()
