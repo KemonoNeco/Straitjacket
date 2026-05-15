@@ -57,50 +57,17 @@ The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks tha
 
 ## The five-layer architecture
 
-```
-                       ┌────────────────────────────────────────────────┐
-                       │  Layer 5: Hooks (hooks/hooks.json)             │
-                       │                                                │
-                       │  UserPromptExpansion → preflight               │
-                       │  PreToolUse / Agent  → pre-adversarial scan    │
-                       │  PostToolUse / Agent → post-agent dispatch     │
-                       └─────────────────────┬──────────────────────────┘
-                                             │ shells out to
-                                             ▼
-                       ┌────────────────────────────────────────────────┐
-                       │  Layer 1: Rust CLI (bin/regression-tests.exe)  │
-                       │                                                │
-                       │  10 subcommands. Pure helpers in commands/*.rs │
-                       │  ─ run(args) is the thin glue                  │
-                       │  ─ pub fn helpers get unit tests               │
-                       └─────────────────────┬──────────────────────────┘
-                                             │ uses
-                                             ▼
-                       ┌────────────────────────────────────────────────┐
-                       │  Layer 2: Shared infra (src/common/)           │
-                       │                                                │
-                       │  walk.rs       descent-time prune (load-bearing)│
-                       │  subprocess.rs per-child env + taskkill /F /T   │
-                       │  json_io.rs    pretty + trailing newline + WU   │
-                       │                array/wrapper unwrap             │
-                       └────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    L5["<b>Layer 5: Hooks</b><br/>hooks/hooks.json<br/><br/>UserPromptExpansion → preflight<br/>PreToolUse / Agent → pre-adversarial scan<br/>PostToolUse / Agent → post-agent dispatch"]
+    L1["<b>Layer 1: Rust CLI</b><br/>bin/regression-tests.exe<br/><br/>10 subcommands. Pure helpers in commands/*.rs<br/>run(args) is the thin glue<br/>pub fn helpers get unit tests"]
+    L2["<b>Layer 2: Shared infra</b><br/>src/common/<br/><br/>walk.rs — descent-time prune (load-bearing)<br/>subprocess.rs — per-child env + taskkill /F /T<br/>json_io.rs — pretty + trailing newline + WU unwrap"]
+    L4["<b>Layer 4: Skill orchestrators</b><br/>skills/*/SKILL.md<br/><br/>Main Claude session reads &amp; executes phases<br/>Cardinal Rule 0: never write test code<br/>Only writes work-units.json, tooling.json, snapshots, scaffolds, summary"]
+    L3["<b>Layer 3: Specialist agents</b><br/>agents/*.md<br/><br/>YAML frontmatter locks model + tools<br/>No Bash/PowerShell on adversarial-* agents<br/>→ system-enforced diff isolation"]
 
-                       ┌────────────────────────────────────────────────┐
-                       │  Layer 3: Specialist agents (agents/*.md)      │
-                       │                                                │
-                       │  YAML frontmatter locks model + tools          │
-                       │  No Bash/PowerShell on adversarial-* agents    │
-                       │  → system-enforced diff isolation              │
-                       └─────────────────────▲──────────────────────────┘
-                                             │ dispatched by
-                       ┌─────────────────────┴──────────────────────────┐
-                       │  Layer 4: Skill orchestrators (skills/*/SKILL.md)│
-                       │                                                │
-                       │  Main Claude session reads & executes phases   │
-                       │  ─ Cardinal Rule 0: never write test code      │
-                       │  ─ Only writes work-units.json, tooling.json,  │
-                       │    snapshots, scaffolds, summary               │
-                       └────────────────────────────────────────────────┘
+    L5 -->|shells out to| L1
+    L1 -->|uses| L2
+    L4 -->|dispatched via Agent tool| L3
 ```
 
 **Cardinal rule per layer** (each layer has exactly one):
@@ -117,120 +84,99 @@ Both skills share a coverage-planning → authoring → adversarial-review → m
 
 ### `regression-tests` skill (5 phases)
 
-```
-   user invokes /regression-tests:regression-tests [target] [flags]
-                            │
-                            ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Hook: UserPromptExpansion                                   │
-   │  → bin/regression-tests hook preflight                       │
-   │  → blocks if baseline (cargo test / dotnet test) is red       │
-   └────────────────────────────┬────────────────────────────────┘
-                                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 1 - Detect & Baseline                                  │
-   │   detect-stack → tooling.json → snapshot-tests              │
-   │   → coverage-baseline.json → scaffolded.json (C# only)       │
-   └────────────────────────────┬────────────────────────────────┘
-                                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 2 - Coverage Planning                                  │
-   │   Agent(coverage-reviewer, opus)                             │
-   │   → work-units.json (round 0, status=pending)                │
-   │   → user confirms intended_behavior contracts (unless        │
-   │     --unattended)                                            │
-   └────────────────────────────┬────────────────────────────────┘
-                                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 3 - Parallel Author Teams                              │
-   │   one message, N parallel Agent blocks:                      │
-   │     · unit-test-author (sonnet) × chunks                     │
-   │     · integration-test-author (opus) × chunks                │
-   │   Hook: PostToolUse/Agent → verify-new-tests-compile         │
-   │   end-of-phase: verify-no-test-mutation (audit)              │
-   └────────────────────────────┬────────────────────────────────┘
-                                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 4 - Adversarial Validation                             │
-   │  4a) one message, 3 parallel adversarial specialists:        │
-   │       · adversarial-vacuousness    (sonnet)                  │
-   │       · adversarial-happy-path     (sonnet)                  │
-   │       · adversarial-misalignment   (sonnet)                  │
-   │      Hook: PreToolUse/Agent scans prompts for diff leakage   │
-   │      → adversarial-synthesis (opus) merges findings          │
-   │      → mutation-runner team (haiku, ≤3 parallel)             │
-   │  4b) fuzz pipeline (skipped if --quick / --no-fuzz):         │
-   │       · fuzz-harness-author (opus, single)                   │
-   │       · fuzz-runner team (haiku, ≤2 parallel)                │
-   │       · reproducer-to-test for each crash                    │
-   └────────────────────────────┬────────────────────────────────┘
-                                ▼
-   ┌─────────────────────────────────────────────────────────────┐
-   │ Phase 5 - Verify & Finalize                                  │
-   │   run-new-tests --runs=3 (Flaky / AllFail / AllPass)         │
-   │   coverage delta vs baseline                                 │
-   │   iterate if mutants survived OR new fuzz reproducers OR     │
-   │   adversarial findings unresolved (default max 3 rounds)     │
-   │   → final markdown summary                                   │
-   └─────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Start(["user invokes<br/>/regression-tests:regression-tests [target] [flags]"])
+    Hook["<b>Hook: UserPromptExpansion</b><br/>bin/regression-tests hook preflight<br/>blocks if baseline (cargo test / dotnet test) is red"]
+    P1["<b>Phase 1 — Detect &amp; Baseline</b><br/>detect-stack → tooling.json → snapshot-tests<br/>→ coverage-baseline.json → scaffolded.json (C# only)"]
+    P2["<b>Phase 2 — Coverage Planning</b><br/>Agent(coverage-reviewer, opus)<br/>→ work-units.json (round 0, status=pending)<br/>→ user confirms intended_behavior (unless --unattended)"]
+    P3["<b>Phase 3 — Parallel Author Teams</b><br/>one message, N parallel Agent blocks:<br/>· unit-test-author (sonnet) × chunks<br/>· integration-test-author (opus) × chunks<br/>Hook: PostToolUse/Agent → verify-new-tests-compile<br/>end-of-phase: verify-no-test-mutation (audit)"]
+    P4["<b>Phase 4 — Adversarial Validation</b><br/>4a) 3 parallel adversarial specialists (sonnet)<br/>→ adversarial-synthesis (opus)<br/>→ mutation-runner team (haiku, ≤3 parallel)<br/>Hook: PreToolUse/Agent scans for diff leakage<br/>4b) fuzz pipeline (skipped if --quick / --no-fuzz):<br/>fuzz-harness-author → fuzz-runner team → reproducer-to-test"]
+    P5["<b>Phase 5 — Verify &amp; Finalize</b><br/>run-new-tests --runs=3 (Flaky / AllFail / AllPass)<br/>coverage delta vs baseline<br/>→ final markdown summary"]
+
+    Start --> Hook
+    Hook --> P1
+    P1 --> P2
+    P2 --> P3
+    P3 --> P4
+    P4 --> P5
+    P5 -. "iterate if mutants survived OR new fuzz reproducers OR<br/>adversarial findings unresolved (max 3 rounds)" .-> P3
 ```
 
 ### `tdd` skill (7 phases)
 
 Same Phase 1-2, but the `coverage-reviewer` runs in `spec` mode and populates `target_stub_path`. Phase 3 authors write tests *and* compile-fail stubs. New phases:
 
-```
-   Phase 3 - Test + Stub Authoring
-     authors write test AND stub at target_stub_path
-     stub body = unimplemented!() / throw new NotImplementedException()
-     run-new-tests --expect=fail   ← red-check; vacuous tests caught here
-                                ▼
-   Phase 4 - Pre-Implementation Adversarial Validation
-     three specialists + synthesis (no mutation, no impl yet)
-     re-dispatch authors if findings severity ≥ medium
-                                ▼
-   Phase 5 - Implementation
-     Agent(implementation-author, opus) × chunks (≤4 parallel)
-     Hook: PostToolUse → verify-new-tests-compile + run-new-tests --expect=pass
-     end-of-phase: verify-no-test-mutation (audit)
-                                ▼
-   Phase 6 - Passing-Reason Validation
-     adversarial team + synthesis + mutation runners (one message, parallel)
-     fuzz pipeline (only if --with-fuzz)
-     surviving mutants → new work units → iterate
-                                ▼
-   Phase 7 - Verify & Finalize
-     run-new-tests --runs=3 --expect=pass
-     summary with "Implementation written" section
+```mermaid
+flowchart TD
+    P3["<b>Phase 3 — Test + Stub Authoring</b><br/>authors write test AND stub at target_stub_path<br/>stub body = unimplemented!() / throw new NotImplementedException()<br/>run-new-tests --expect=fail   ← red-check; vacuous tests caught here"]
+    P4["<b>Phase 4 — Pre-Implementation Adversarial Validation</b><br/>three specialists + synthesis (no mutation, no impl yet)<br/>re-dispatch authors if findings severity ≥ medium"]
+    P5["<b>Phase 5 — Implementation</b><br/>Agent(implementation-author, opus) × chunks (≤4 parallel)<br/>Hook: PostToolUse → verify-new-tests-compile + run-new-tests --expect=pass<br/>end-of-phase: verify-no-test-mutation (audit)"]
+    P6["<b>Phase 6 — Passing-Reason Validation</b><br/>adversarial team + synthesis + mutation runners (one message, parallel)<br/>fuzz pipeline (only if --with-fuzz)"]
+    P7["<b>Phase 7 — Verify &amp; Finalize</b><br/>run-new-tests --runs=3 --expect=pass<br/>summary with 'Implementation written' section"]
+
+    P3 --> P4
+    P4 -. "findings ≥ medium" .-> P3
+    P4 --> P5
+    P5 --> P6
+    P6 --> P7
+    P6 -. "surviving mutants → new work units" .-> P5
 ```
 
 ## Agent dispatch graph
 
-Eleven specialist agents, four model tiers, three concurrency patterns:
+Eleven specialist agents, four model tiers, three concurrency patterns. Fan-out by phase:
 
+```mermaid
+flowchart LR
+    P2[Phase 2]
+    P3[Phase 3]
+    P4a[Phase 4a]
+    P4b[Phase 4b]
+    P5tdd[Phase 5<br/>tdd only]
+
+    CR["coverage-reviewer<br/>opus xhigh · single"]
+    UA["unit-test-author<br/>sonnet high · ≤6 parallel"]
+    IA["integration-test-author<br/>opus xhigh · ≤6 parallel"]
+    AV["adversarial-vacuousness<br/>sonnet high"]
+    AH["adversarial-happy-path<br/>sonnet high"]
+    AM["adversarial-misalignment<br/>sonnet high"]
+    AS["adversarial-synthesis<br/>opus xhigh · single"]
+    MR["mutation-runner<br/>haiku · ≤3 parallel"]
+    FH["fuzz-harness-author<br/>opus xhigh · single"]
+    FR["fuzz-runner<br/>haiku · ≤2 parallel"]
+    IMP["implementation-author<br/>opus xhigh · ≤4 parallel"]
+
+    P2 --> CR
+    P3 --> UA
+    P3 --> IA
+    P4a --> AV
+    P4a --> AH
+    P4a --> AM
+    AV --> AS
+    AH --> AS
+    AM --> AS
+    AS --> MR
+    P4b --> FH
+    FH --> FR
+    P5tdd --> IMP
 ```
-┌──────────────────────┬───────────┬────────┬───────────────────────┬─────────────────┐
-│ Agent                │ Model     │ Effort │ Tools                 │ Dispatch        │
-├──────────────────────┼───────────┼────────┼───────────────────────┼─────────────────┤
-│ coverage-reviewer    │ opus      │ xhigh  │ Read, Grep, Glob      │ single, Phase 2 │
-│ unit-test-author     │ sonnet    │ high   │ R,Gp,Gb, Write, Edit  │ ≤6 parallel    │
-│ integration-test-    │ opus      │ xhigh  │ R,Gp,Gb, Write, Edit  │ ≤6 parallel    │
-│   author             │           │        │                       │                 │
-│ adversarial-         │ sonnet    │ high   │ Read, Grep, Glob      │ 3 in parallel,  │
-│   vacuousness        │           │        │                       │ one message     │
-│ adversarial-         │ sonnet    │ high   │ Read, Grep, Glob      │ 3 in parallel,  │
-│   happy-path         │           │        │                       │ one message     │
-│ adversarial-         │ sonnet    │ high   │ Read, Grep, Glob      │ 3 in parallel,  │
-│   misalignment       │           │        │                       │ one message     │
-│ adversarial-         │ opus      │ xhigh  │ Read, Grep, Glob      │ single, after   │
-│   synthesis          │           │        │                       │ specialists     │
-│ mutation-runner      │ haiku     │ -      │ Read, Bash, PowerShell│ ≤3 parallel     │
-│ fuzz-harness-author  │ opus      │ xhigh  │ R,Gp,Gb,W,E,Bash,PS   │ single          │
-│ fuzz-runner          │ haiku     │ -      │ Read, Glob, Bash, PS  │ ≤2 parallel     │
-│ implementation-      │ opus      │ xhigh  │ R,Gp,Gb, Write, Edit  │ ≤4 parallel     │
-│   author             │           │        │                       │ (tdd Phase 5)   │
-└──────────────────────┴───────────┴────────┴───────────────────────┴─────────────────┘
-```
+
+Tool inventory:
+
+| Agent | Model | Effort | Tools | Dispatch |
+|---|---|---|---|---|
+| `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | single, Phase 2 |
+| `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | ≤6 parallel |
+| `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | ≤6 parallel |
+| `adversarial-vacuousness` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-happy-path` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-misalignment` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | single, after specialists |
+| `mutation-runner` | haiku | — | Read, Bash, PowerShell | ≤3 parallel |
+| `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | single |
+| `fuzz-runner` | haiku | — | Read, Glob, Bash, PowerShell | ≤2 parallel |
+| `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | ≤4 parallel (tdd Phase 5) |
 
 **Tool restrictions are load-bearing.** The three `adversarial-*` specialists do *not* have `Bash` or `PowerShell`. They cannot `git diff`, cannot read git history, cannot shell out. That isolation from "what changed" is the structural guarantee that adversarial review is not anchored to author rationalizations. The plugin's `PreToolUse` hook adds defense-in-depth by scanning prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before the spawn.
 
@@ -242,30 +188,11 @@ Eleven specialist agents, four model tiers, three concurrency patterns:
 
 Three Claude Code hook events, each backed by a pure function in `src/commands/hook.rs`:
 
-```
-┌─────────────────────────┬─────────────────────────┬──────────────────────────────┐
-│ Hook event              │ Subcommand              │ Decision logic               │
-├─────────────────────────┼─────────────────────────┼──────────────────────────────┤
-│ UserPromptExpansion     │ hook preflight          │ is_plugin_skill_invocation() │
-│  matcher: skill names   │                         │ → Allow (orchestrator runs   │
-│                         │                         │   detect-stack/baseline/lint │
-│                         │                         │   in Phase 1)                │
-├─────────────────────────┼─────────────────────────┼──────────────────────────────┤
-│ PreToolUse / Agent      │ hook pre-adversarial    │ decide_pre_adversarial()     │
-│  timeout: 5s            │                         │ → scans for forbidden        │
-│                         │                         │   strings in prompts for     │
-│                         │                         │   adversarial-* subagents    │
-│                         │                         │ → Deny w/ permissionDecision │
-├─────────────────────────┼─────────────────────────┼──────────────────────────────┤
-│ PostToolUse / Agent     │ hook post-agent         │ decide_post_agent()          │
-│                         │                         │ → unit/integration-test-     │
-│                         │                         │   author → VerifyNewTests-   │
-│                         │                         │   Compile                    │
-│                         │                         │ → implementation-author →    │
-│                         │                         │   VerifyNewTestsCompile +    │
-│                         │                         │   RunNewTests                │
-└─────────────────────────┴─────────────────────────┴──────────────────────────────┘
-```
+| Hook event | Subcommand | Decision logic |
+|---|---|---|
+| `UserPromptExpansion`<br/>matcher: skill names | `hook preflight` | `is_plugin_skill_invocation()` → Allow (orchestrator runs detect-stack / baseline / lint in Phase 1) |
+| `PreToolUse / Agent`<br/>timeout: 5s | `hook pre-adversarial` | `decide_pre_adversarial()` → scans for forbidden strings in prompts for `adversarial-*` subagents → Deny w/ `permissionDecision` |
+| `PostToolUse / Agent` | `hook post-agent` | `decide_post_agent()` → unit / integration-test-author → `VerifyNewTestsCompile`; implementation-author → `VerifyNewTestsCompile` + `RunNewTests` |
 
 **Hook response shape.** Renders depend on the event:
 
