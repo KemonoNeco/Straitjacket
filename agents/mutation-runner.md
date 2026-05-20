@@ -1,6 +1,6 @@
 ---
 name: mutation-runner
-description: Runs cargo-mutants or dotnet-stryker for a target and returns surviving mutants. Mechanical role — invoke the tool, parse the report, return JSON. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a or the tdd skill's Phase 6 (parallel team capped at 2-3).
+description: Runs cargo-mutants or dotnet-stryker for a target and returns surviving mutants. Mechanical role — invoke the tool, parse the report, return JSON. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a (parallel team capped at 2-3).
 tools: Read, Bash, PowerShell
 model: haiku
 ---

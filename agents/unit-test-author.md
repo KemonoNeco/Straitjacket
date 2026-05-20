@@ -1,6 +1,6 @@
 ---
 name: unit-test-author
-description: Writes unit-level tests for assigned work units. In the regression-tests skill, tests verify existing behavior; in the tdd skill, tests are written together with minimal stubs at target_stub_path so they compile-but-fail. Internal to the regression-tests plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
+description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the regression-tests plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
 tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 effort: high

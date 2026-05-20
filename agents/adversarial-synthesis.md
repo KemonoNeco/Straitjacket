@@ -1,6 +1,6 @@
 ---
 name: adversarial-synthesis
-description: Synthesizes the three adversarial specialists' findings (vacuousness, happy-path, misalignment) into the canonical adversarial review output. Dedupes overlapping findings, ranks by severity, produces mutation runner task list. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a and the tdd skill's Phase 4 and Phase 6, after the three specialists return.
+description: Synthesizes the three adversarial specialists' findings (vacuousness, happy-path, misalignment) into the canonical adversarial review output. Dedupes overlapping findings, ranks by severity, produces mutation runner task list. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a, after the three specialists return.
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh

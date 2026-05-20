@@ -3,7 +3,7 @@
   "hooks": {
     "UserPromptExpansion": [
       {
-        "matcher": "regression-tests:regression-tests|regression-tests:tdd|^regression-tests$|^tdd$",
+        "matcher": "regression-tests:regression-tests|^regression-tests$",
         "hooks": [
           {
             "type": "command",

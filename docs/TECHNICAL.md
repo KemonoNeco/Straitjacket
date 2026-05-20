@@ -27,10 +27,9 @@ regression-tests-plugin/
 ├── .claude-plugin/         (1) Marketplace + plugin metadata
 │   ├── marketplace.json
 │   └── plugin.json
-├── skills/                 (2) Two skill orchestrator playbooks
-│   ├── regression-tests/SKILL.md
-│   └── tdd/SKILL.md
-├── agents/                 (3) Eleven specialist agent definitions
+├── skills/                 (2) Skill orchestrator playbook
+│   └── regression-tests/SKILL.md
+├── agents/                 (3) Ten specialist agent definitions
 │   ├── coverage-reviewer.md
 │   ├── unit-test-author.md
 │   ├── integration-test-author.md
@@ -40,8 +39,7 @@ regression-tests-plugin/
 │   ├── adversarial-synthesis.md
 │   ├── mutation-runner.md
 │   ├── fuzz-harness-author.md
-│   ├── fuzz-runner.md
-│   └── implementation-author.md
+│   └── fuzz-runner.md
 ├── hooks/                  (4) Three Claude Code hook bindings
 │   └── hooks.json
 ├── bin/regression-tests.exe (5a) Pre-built helper binary (committed, ~3MB)
@@ -53,7 +51,9 @@ regression-tests-plugin/
 └── schemas/work-unit.schema.json   The orchestrator ↔ author contract
 ```
 
-The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skills shell out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
+The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skill shells out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
+
+> A TDD skill (`skills/tdd/`) and an `implementation-author` agent previously shipped alongside the regression-tests skill. They have been temporarily removed and will be reimplemented later. Some Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation.
 
 ## The five-layer architecture
 
@@ -74,8 +74,8 @@ flowchart TB
 |---|---|---|
 | 1 - Rust CLI | `bin/regression-tests.exe` | 10 subcommands |
 | 2 - Shared infra | `src/common/` | walk, subprocess, json_io |
-| 3 - Specialist agents | `agents/*.md` | 11 agents |
-| 4 - Skill orchestrators | `skills/*/SKILL.md` | main Claude session |
+| 3 - Specialist agents | `agents/*.md` | 10 agents |
+| 4 - Skill orchestrator | `skills/regression-tests/SKILL.md` | main Claude session |
 | 5 - Hooks | `hooks/hooks.json` | 3 events |
 
 **Cardinal rule per layer** (each layer has exactly one):
@@ -88,9 +88,7 @@ flowchart TB
 
 ## Skill phase flow
 
-Both skills share a coverage-planning → authoring → adversarial-review → mutation cadence. The `tdd` skill adds an implementation phase and a second adversarial pass.
-
-### `regression-tests` skill (5 phases)
+The `regression-tests` skill runs a coverage-planning → authoring → adversarial-review → mutation cadence over five phases:
 
 ```mermaid
 flowchart TD
@@ -115,34 +113,9 @@ Per-phase detail:
 * **Phase 4b** (skipped on `--quick` / `--no-fuzz`): `fuzz-harness-author` (opus) → `fuzz-runner` team (haiku, ≤2 parallel) → `reproducer-to-test` per crash.
 * **Phase 5** runs `run-new-tests --runs=3` and classifies each WorkUnit as Flaky / AllFail / AllPass. Coverage delta vs baseline. Iterates if mutants survived OR new fuzz reproducers OR adversarial findings unresolved (default cap = 3 rounds). Final markdown summary.
 
-### `tdd` skill (7 phases)
-
-Same Phase 1-2, but the `coverage-reviewer` runs in `spec` mode and populates `target_stub_path`. Phase 3 authors write tests *and* compile-fail stubs. New phases:
-
-```mermaid
-flowchart TD
-    P3["Phase 3<br/>Test + Stub<br/>red-check"]
-    P4["Phase 4<br/>Pre-impl<br/>Adversarial"]
-    P5["Phase 5<br/>Implementation<br/>green-check"]
-    P6["Phase 6<br/>Passing-Reason<br/>Validation"]
-    P7["Phase 7<br/>Verify &amp; Finalize"]
-
-    P3 --> P4 --> P5 --> P6 --> P7
-    P4 -. "findings" .-> P3
-    P6 -. "mutants" .-> P5
-```
-
-Per-phase detail:
-
-* **Phase 3** authors write the test AND a stub at `target_stub_path`. Stub body is `unimplemented!()` (Rust) or `throw new NotImplementedException()` (C#). `run-new-tests --expect=fail` is the red-check; vacuous tests (e.g. assertions that pass with no body) are caught here.
-* **Phase 4** dispatches the three adversarial specialists + synthesis with *no* mutation and *no* implementation yet. If findings severity ≥ medium, authors are re-dispatched.
-* **Phase 5** dispatches `implementation-author` (opus) × chunks (≤4 parallel). `PostToolUse` hook auto-runs `verify-new-tests-compile` + `run-new-tests --expect=pass`. End-of-phase: `verify-no-test-mutation` (audit).
-* **Phase 6** dispatches the adversarial team + synthesis + mutation runners in **one message** (parallel). Fuzz pipeline only if `--with-fuzz`. Surviving mutants → new work units → iterate back through Phase 5.
-* **Phase 7** runs `run-new-tests --runs=3 --expect=pass`. Final summary includes an "Implementation written" section listing the new source files.
-
 ## Agent dispatch graph
 
-Eleven specialist agents, four model tiers, three concurrency patterns. Fan-out by phase:
+Ten specialist agents, three model tiers, three concurrency patterns. Fan-out by phase:
 
 ```mermaid
 flowchart TD
@@ -157,7 +130,6 @@ flowchart TD
     AM --> AS
     AS --> MR[mutation-runner]
     P4b[Phase 4b] --> FH[fuzz-harness-author] --> FR[fuzz-runner]
-    P5tdd[Phase 5 tdd-only] --> IMP[implementation-author]
 ```
 
 Tool inventory:
@@ -174,7 +146,6 @@ Tool inventory:
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | ≤3 parallel |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | single |
 | `fuzz-runner` | haiku | — | Read, Glob, Bash, PowerShell | ≤2 parallel |
-| `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | ≤4 parallel (tdd Phase 5) |
 
 **Tool restrictions are load-bearing.** The three `adversarial-*` specialists do *not* have `Bash` or `PowerShell`. They cannot `git diff`, cannot read git history, cannot shell out. That isolation from "what changed" is the structural guarantee that adversarial review is not anchored to author rationalizations. The plugin's `PreToolUse` hook adds defense-in-depth by scanning prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before the spawn.
 
@@ -190,7 +161,7 @@ Three Claude Code hook events, each backed by a pure function in `src/commands/h
 |---|---|---|
 | `UserPromptExpansion`<br/>matcher: skill names | `hook preflight` | `is_plugin_skill_invocation()` → Allow (orchestrator runs detect-stack / baseline / lint in Phase 1) |
 | `PreToolUse / Agent`<br/>timeout: 5s | `hook pre-adversarial` | `decide_pre_adversarial()` → scans for forbidden strings in prompts for `adversarial-*` subagents → Deny w/ `permissionDecision` |
-| `PostToolUse / Agent` | `hook post-agent` | `decide_post_agent()` → unit / integration-test-author → `VerifyNewTestsCompile`; implementation-author → `VerifyNewTestsCompile` + `RunNewTests` |
+| `PostToolUse / Agent` | `hook post-agent` | `decide_post_agent()` → unit / integration-test-author → `VerifyNewTestsCompile` |
 
 **Hook response shape.** Renders depend on the event:
 
@@ -269,15 +240,16 @@ WorkUnit
 ├── fuzzable            true → Phase 4b fuzz-harness-author considers this target.
 ├── output_file_path    Pre-assigned to prevent parallel-author collisions.
 ├── output_test_name    Language-appropriate test name.
-├── target_stub_path    TDD-mode only: where the test author writes the stub.
-│                       ↑ null in regression-tests mode.
+├── target_stub_path    Reserved for future use (the TDD skill that consumed
+│                       this field has been temporarily removed). Currently
+│                       null in regression-tests mode.
 ├── status              "pending" | "written" | "implemented" | "rejected_lint" |
 │                       "quarantined" | "surfaced_bug"
 ├── round               -1 (fuzz reproducer) | 0 (initial) | N (adversarial round)
 └── source_of_unit      "coverage_reviewer" | "adversarial_reviewer" | "fuzz_runner"
 ```
 
-**Immutability is the alignment anchor.** Once the Coverage Reviewer commits `intended_behavior`, no downstream agent - author, adversarial reviewer, implementation-author, synthesizer - may rewrite it. Disagreements surface in `notes_to_orchestrator` and route back to the user via the final summary. This is the structural guarantee that the adversarial specialists are reviewing against a fixed contract, not against the test author's evolving interpretation.
+**Immutability is the alignment anchor.** Once the Coverage Reviewer commits `intended_behavior`, no downstream agent - author, adversarial reviewer, synthesizer - may rewrite it. Disagreements surface in `notes_to_orchestrator` and route back to the user via the final summary. This is the structural guarantee that the adversarial specialists are reviewing against a fixed contract, not against the test author's evolving interpretation.
 
 ## Test isolation invariants
 
@@ -287,7 +259,7 @@ WorkUnit
 
 **2. Process-tree kills are Windows-only today.** `subprocess.rs::tests::timeout_kills_entire_process_tree` is `#[cfg(windows)]` and uses a unique `-w` ping tag (`88_000_000 + (pid % 100_000)`) to detect orphans via `Get-CimInstance Win32_Process`. The Linux/macOS implementation of `kill_process_tree` is stubbed; add an equivalent (`kill -- -$pgid` or similar) when cross-platform work begins.
 
-**3. JSON-shape tests are contract tests.** Tests like `stack_serializes_as_lowercase_string` defend the JSON output contract that SKILL.md orchestrators consume. The orchestrator parses by exact field names and lowercase enum values (`"rust" | "csharp" | "both" | "none"`, `"unit" | "integration"`, etc.). Don't relax these without updating both SKILL.md files.
+**3. JSON-shape tests are contract tests.** Tests like `stack_serializes_as_lowercase_string` defend the JSON output contract that the SKILL.md orchestrator consumes. The orchestrator parses by exact field names and lowercase enum values (`"rust" | "csharp" | "both" | "none"`, `"unit" | "integration"`, etc.). Don't relax these without updating the SKILL.md.
 
 ## Extension recipes
 
