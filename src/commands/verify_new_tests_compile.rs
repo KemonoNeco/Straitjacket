@@ -331,10 +331,6 @@ mod tests {
     ///
     /// Precondition: td/Spurious.csproj/ is a DIRECTORY (not a file), and there are
     /// no real *.csproj files anywhere in the temp tree. Expected: None.
-    ///
-    /// NOTE: The current implementation does NOT call is_file() on matched entries,
-    /// only checks the extension. This test is expected to FAIL against the current
-    /// source, thereby surfacing the bug.
     #[test]
     fn test_find_enclosing_csproj_ignores_directories_with_csproj_suffix() {
         let td = TempDir::new().unwrap();

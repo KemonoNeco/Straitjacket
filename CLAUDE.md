@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Claude Code plugin (not just a Rust crate). It ships **two skills**, **eleven specialist agents**, **three hooks**, and a **Rust CLI binary** that together implement two multi-agent test workflows: `regression-tests` (lock current behavior) and `tdd` (drive new feature development with failing-tests-first). The Rust crate at the repo root is the *helper binary* for the plugin — not the plugin's primary output. The primary output is the skills + agents + hooks that orchestrate Claude Code subagents.
 
-Read `README.md` for end-user info. The plan that drove the build lives at `~/.claude/plans/do-we-need-a-twinkly-bonbon.md` (476 lines, source of truth for design decisions).
+Read `README.md` for end-user info, and `docs/TECHNICAL.md` for the architecture deep-dive (phase flowcharts, agent dispatch graph, file lifecycle, extension recipes). The plan that drove the build lives at `~/.claude/plans/do-we-need-a-twinkly-bonbon.md` (476 lines, source of truth for design decisions).
 
 ## Build / test commands
 
@@ -42,7 +42,7 @@ After bootstrap:
 
 - `cargo check --all-targets` - Fast type-check, no codegen
 - `cargo clippy --all-targets -- -D warnings` - Lint gate, must be clean
-- `cargo test --lib` - Runs the ~116 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
+- `cargo test --lib` - Runs the 145 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
 - `cargo test --lib commands::detect_stack` - Single-module run by qualified path
 
 > Claude note: Cargo `test` takes exactly one filter positional - you can't pass two module paths in the same invocation. To run two modules, run two commands.
@@ -116,4 +116,4 @@ The Rust binary is also the *hook executor* — `regression-tests hook <event>` 
 
 ## Available memory
 
-`~/.claude/projects/C--Users-KemonoNeco-Code-regression-tests-plugin/memory/` contains four memory files relevant to this repo (`project_plugin_scope.md`, `reference_cargo_build_env.md`, `feedback_no_explore_when_user_points.md`, `feedback_dogfood_tdd_on_plugin.md`). These pre-load into the session context automatically.
+`~/.claude/projects/C--Users-KemonoNeco-Code-regression-tests-plugin/memory/` contains several memory files relevant to this repo (project scope, cargo build env, several feedback notes). The index at `MEMORY.md` pre-loads into the session context automatically.
