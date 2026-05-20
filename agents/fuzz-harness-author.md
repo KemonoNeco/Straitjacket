@@ -1,6 +1,6 @@
 ---
 name: fuzz-harness-author
-description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4b (or the tdd skill's Phase 6 when --with-fuzz is set).
+description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4b.
 tools: Read, Grep, Glob, Write, Edit, Bash, PowerShell
 model: opus
 effort: xhigh

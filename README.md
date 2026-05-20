@@ -1,19 +1,20 @@
 # regression-tests plugin
 
-A Claude Code plugin that ships two multi-agent test workflows on top of a shared specialist-agent framework. Both skills harden test suites against the same four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing.
+A Claude Code plugin that ships a multi-agent test workflow. It hardens test suites against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing.
+
+> A TDD skill that drove new feature development with failing-tests-first was previously shipped alongside this one. It has been temporarily removed and will be reimplemented later.
 
 * **Looking for usage?** Jump to [Quickstart](#quickstart).
 * **Looking for design?** Read [docs/TECHNICAL.md](docs/TECHNICAL.md) for the architecture deep-dive.
 * **Contributing to the plugin?** Read [CLAUDE.md](CLAUDE.md) for the load-bearing invariants.
 
-## Skills
+## Skill
 
 | Slash command | Purpose |
 |---|---|
 | `/regression-tests:regression-tests` | Generate regression tests for recent changes or a target module. Locks current behavior. |
-| `/regression-tests:tdd` | Drive new feature development by writing failing tests first, then implementing against them. |
 
-Both skills run the same pipeline shape: **coverage planning → parallel test authoring → adversarial team review → mutation testing → optional fuzzing**. The `tdd` skill adds a green phase (`implementation-author` writes source to pass the tests) followed by a second adversarial pass to verify the *passing reason* is real, not gamed.
+Pipeline shape: **coverage planning → parallel test authoring → adversarial team review → mutation testing → optional fuzzing**.
 
 ## Quickstart
 
@@ -30,18 +31,17 @@ cd ~/path/to/my-rust-project
 claude
 > /regression-tests:regression-tests          # diff mode (vs. origin/main)
 > /regression-tests:regression-tests src/parser.rs   # target mode
-> /regression-tests:tdd "Parse RFC-2822 dates with timezone offsets"
 ```
 
 The skill writes tests directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run).
 
 ## Agents
 
-Eleven specialist agents are shared between the two skills:
+Ten specialist agents make up the workflow:
 
 | Agent | Model | Role |
 |---|---|---|
-| `coverage-reviewer` | opus | Synthesis: diff/spec → locked work-unit contracts |
+| `coverage-reviewer` | opus | Synthesis: diff/target → locked work-unit contracts |
 | `unit-test-author` | sonnet | Parallel team, unit-level test code |
 | `integration-test-author` | opus | Reasoning-heavy boundary tests |
 | `adversarial-vacuousness` | sonnet | Specialist: vacuous tests + test-mutation patterns |
@@ -51,7 +51,6 @@ Eleven specialist agents are shared between the two skills:
 | `mutation-runner` | haiku | Mechanical: cargo-mutants / dotnet-stryker |
 | `fuzz-harness-author` | opus | Reasoning-heavy fuzz harness design |
 | `fuzz-runner` | haiku | Mechanical: cargo-fuzz / SharpFuzz |
-| `implementation-author` | opus | TDD green-phase code writer |
 
 See [docs/TECHNICAL.md#agent-dispatch-graph](docs/TECHNICAL.md#agent-dispatch-graph) for the full tool inventory and concurrency limits.
 
@@ -61,7 +60,7 @@ See [docs/TECHNICAL.md#agent-dispatch-graph](docs/TECHNICAL.md#agent-dispatch-gr
 
 * **`UserPromptExpansion`** on the plugin's skill names → runs `regression-tests preflight` (detect-stack + baseline-check + lint-check). Blocks the skill if the baseline is red.
 * **`PreToolUse`** on the `Agent` tool → scans prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before adversarial specialists spawn (defense-in-depth on top of their tool restrictions).
-* **`PostToolUse`** on the `Agent` tool → auto-runs `verify-new-tests-compile` after each test-author returns, plus `run-new-tests` after the `implementation-author` returns. Blocks with diagnostics for retry.
+* **`PostToolUse`** on the `Agent` tool → auto-runs `verify-new-tests-compile` after each test-author returns. Blocks with diagnostics for retry.
 
 `verify-no-test-mutation` is *not* a per-author hook (see [TECHNICAL.md#hook-lifecycle](docs/TECHNICAL.md#hook-lifecycle) for the rationale). The orchestrator runs it once at end-of-phase as an audit; the adversarial-vacuousness and adversarial-misalignment specialists provide primary cheat detection.
 
@@ -135,7 +134,7 @@ claude plugin install regression-tests@regression-tests
 claude --plugin-dir ~/Code/regression-tests-plugin
 ```
 
-Then invoke `/regression-tests:regression-tests` or `/regression-tests:tdd` in any Rust or C# project's git working tree.
+Then invoke `/regression-tests:regression-tests` in any Rust or C# project's git working tree.
 
 ## Build from source
 

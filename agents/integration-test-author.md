@@ -1,6 +1,6 @@
 ---
 name: integration-test-author
-description: Writes integration-level tests spanning multiple components for assigned work units. In regression-tests mode, tests verify existing behavior; in tdd mode, tests are written together with minimal stubs at target_stub_path so they compile-but-fail. Internal to the regression-tests plugin — invoked during Phase 3 integration-author team dispatch.
+description: Writes integration-level tests spanning multiple components for assigned work units that verify existing behavior. Internal to the regression-tests plugin — invoked during Phase 3 integration-author team dispatch.
 tools: Read, Grep, Glob, Write, Edit
 model: opus
 effort: xhigh

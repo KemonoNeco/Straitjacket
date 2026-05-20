@@ -1,6 +1,6 @@
 ---
 name: coverage-reviewer
-description: Enumerates work units for a diff/target scope (regression-tests skill) or a spec text (tdd skill) and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the regression-tests plugin — invoked by each skill's main session during Phase 2.
+description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the regression-tests plugin — invoked by the regression-tests skill's main session during Phase 2.
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh
