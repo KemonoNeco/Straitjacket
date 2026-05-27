@@ -19,24 +19,27 @@ Read `README.md` for end-user info, and `docs/TECHNICAL.md` for the architecture
 - `link: extra operand` - Git Bash's `link.exe` shadows the MSVC linker on PATH
 - `LNK1181: cannot open kernel32.lib` - Windows SDK lib paths absent from the env
 
-Source the environment at the top of every Cargo invocation:
+**Preferred — git bash.** The repo ships **`scripts\cargo-msvc.cmd`**, which `vswhere`-resolves `vcvars64.bat` (so it survives VS edition/version upgrades — **VS18 / 2026** today, *not* the stale hardcoded 2022 path) and runs cargo with the MSVC env. From git bash:
+
+```bash
+cmd //c scripts\cargo-msvc.cmd test --lib
+cmd //c scripts\cargo-msvc.cmd clippy --all-targets -- -D warnings
+# keep any `| tail` on the BASH side — cmd has no `tail`
+```
+
+> Claude note: the wrapper dodges two load-bearing Windows gotchas. (1) Git bash's `/usr/bin/link.exe` shadows MSVC's linker (`link: extra operand`); running cargo *inside* `cmd` after vcvars uses cmd's PATH, where MSVC's link wins. (2) A space-containing `"C:\…\vcvars64.bat"` placed directly on a `cmd //c '…'` arg line gets MSYS-escaped to `\"C:\…\"` and cmd can't parse it — keeping the quoted path inside the `.cmd` avoids it. vcvars is located via `vswhere`, replacing the previously-hardcoded `…\2022\Community\…` path that no longer exists on this machine.
+
+<details><summary>PowerShell alternative (vswhere-resolved)</summary>
 
 ```powershell
-# Installer dir on PATH BEFORE vcvars runs - vcvars64.bat shells out to vswhere.exe
-$installerDir = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer'
-$env:PATH = "$installerDir;$env:PATH"
-
-# Source vcvars64.bat into the current PowerShell session
-$vcvars = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat'
+$vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+$vcvars  = & $vswhere -latest -prerelease -find 'VC\Auxiliary\Build\vcvars64.bat'
 cmd.exe /c "`"$vcvars`" >NUL 2>&1 && set" | ForEach-Object {
     if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($matches[1])" -Value $matches[2] }
 }
-
-# Prevent MSBuild node-reuse from holding files open across builds
 $env:MSBUILDDISABLENODEREUSE = '1'
 ```
-
-> Claude note: The Installer-dir-before-vcvars ordering is load-bearing. `vcvars64.bat` calls `vswhere.exe` internally to locate the active VS install; if `vswhere` isn't on PATH first, vcvars silently picks the wrong toolchain (or none) and the resulting env is incomplete.
+</details>
 
 ### Standard commands
 
@@ -44,7 +47,7 @@ After bootstrap:
 
 - `cargo check --all-targets` - Fast type-check, no codegen
 - `cargo clippy --all-targets -- -D warnings` - Lint gate, must be clean
-- `cargo test --lib` - Runs the 145 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
+- `cargo test --lib` - Runs the 163 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
 - `cargo test --lib commands::detect_stack` - Single-module run by qualified path
 
 > Claude note: Cargo `test` takes exactly one filter positional - you can't pass two module paths in the same invocation. To run two modules, run two commands.
@@ -87,7 +90,7 @@ Five layers, each with a different cardinal rule:
 
 1. **`bin/regression-tests.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
 
-2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline.
+2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline. **`cargo_target.rs`** holds `resolve_cargo_target` (pure manifest-paths → `CargoTarget`: a root-level `Cargo.toml` → run with `--workspace`; a single nested crate → run from that crate's dir *without* `--workspace`; multiple nested with no root → `Ambiguous`, never a silent pick) and `cargo_invocation` (maps a `CargoTarget` + base cargo args → cwd + argv, inserting `--workspace` only for a real workspace). `baseline_check`/`lint_check`/`run_new_tests` use them to run cargo from the correct directory on nested-crate layouts instead of a blind `--workspace` from `repo_root`.
 
 3. **`agents/*.md`** — 10 specialist subagent definitions. Each has YAML frontmatter (`name`, `description`, `tools`, `model`, `effort`) and a body that's the agent's role + procedure + output-contract. Tool restrictions are **load-bearing isolation guarantees**, not advisory: `adversarial-*` agents have no `Bash`/`PowerShell` so they cannot `git diff` even if their prompt tries to make them. The plugin's `PreToolUse` hook scans adversarial-agent prompts as defense-in-depth. When editing an agent, preserve the tool list unless you intend to change its isolation contract.
 

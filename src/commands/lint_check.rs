@@ -1,3 +1,5 @@
+use crate::commands::detect_stack::detect_stack;
+use crate::common::cargo_target::{cargo_invocation, resolve_cargo_target, CargoInvocation};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
 use anyhow::Context;
@@ -92,34 +94,61 @@ pub fn lint_check(
     let mut all_passed = true;
 
     if matches!(stack, Stack::Rust | Stack::Both) {
-        let r1 = run_step(
-            "cargo check --all-targets",
-            "cargo",
-            &["check", "--all-targets"],
-            repo_root,
-            &log_path,
-        )?;
-        if r1.exit_code != 0 {
-            all_passed = false;
-            diagnostics.push(Diagnostic {
-                step: "cargo check --all-targets".into(),
-                excerpt: extract_excerpt(&r1.combined_output, 50),
-            });
-        }
+        let manifests = detect_stack(repo_root)?.rust_manifests;
+        let target = resolve_cargo_target(&manifests, repo_root);
 
-        let r2 = run_step(
-            "cargo clippy --all-targets -- -D warnings",
-            "cargo",
-            &["clippy", "--all-targets", "--", "-D", "warnings"],
-            repo_root,
-            &log_path,
-        )?;
-        if r2.exit_code != 0 {
-            all_passed = false;
-            diagnostics.push(Diagnostic {
-                step: "cargo clippy --all-targets -- -D warnings".into(),
-                excerpt: extract_excerpt(&r2.combined_output, 50),
-            });
+        match cargo_invocation(&target, &["check", "--all-targets"]) {
+            CargoInvocation::Run { cwd, args } => {
+                let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                let r1 = run_step("cargo check --all-targets", "cargo", &argv, &cwd, &log_path)?;
+                if r1.exit_code != 0 {
+                    all_passed = false;
+                    diagnostics.push(Diagnostic {
+                        step: "cargo check --all-targets".into(),
+                        excerpt: extract_excerpt(&r1.combined_output, 50),
+                    });
+                }
+
+                // Re-derive the clippy invocation from the same resolved target so it
+                // runs from the identical cwd with --workspace inserted iff applicable.
+                if let CargoInvocation::Run { cwd, args } =
+                    cargo_invocation(&target, &["clippy", "--all-targets", "--", "-D", "warnings"])
+                {
+                    let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                    let r2 = run_step(
+                        "cargo clippy --all-targets -- -D warnings",
+                        "cargo",
+                        &argv,
+                        &cwd,
+                        &log_path,
+                    )?;
+                    if r2.exit_code != 0 {
+                        all_passed = false;
+                        diagnostics.push(Diagnostic {
+                            step: "cargo clippy --all-targets -- -D warnings".into(),
+                            excerpt: extract_excerpt(&r2.combined_output, 50),
+                        });
+                    }
+                }
+            }
+            CargoInvocation::Skip => {
+                // No Rust target — skip the rust lint steps without failing.
+            }
+            CargoInvocation::Ambiguous { candidates } => {
+                all_passed = false;
+                let joined = candidates
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                diagnostics.push(Diagnostic {
+                    step: "cargo-target-resolution".into(),
+                    excerpt: format!(
+                        "ambiguous: multiple crates with no root manifest: {}",
+                        joined
+                    ),
+                });
+            }
         }
     }
 

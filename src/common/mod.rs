@@ -1,3 +1,4 @@
+pub mod cargo_target;
 pub mod json_io;
 pub mod subprocess;
 pub mod walk;

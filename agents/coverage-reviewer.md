@@ -28,7 +28,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
 
 1. **Read the source under test (or the spec).** For each changed/targeted file or for each behavior the spec describes, identify public functions, methods, and types. For each, mentally enumerate:
    - **Happy path**: typical input → typical output.
-   - **Edge cases**: empty/null/zero, max/min boundaries, single element, exactly one less / one more than a threshold.
+   - **Edge cases**: empty/null/zero, max/min boundaries, single element, exactly one less / one more than a threshold. For any branch whose outcome depends on a **count or collection size**, enumerate each boundary as its own work unit — `0`, **exactly `1`**, and `2+`. A `0`-and-`2+` pair silently misses an off-by-one that only the exactly-`1` case catches (e.g. a "root manifest wins" rule tested at 0 and 2 nested members but never at 1).
    - **Error states**: malformed input, out-of-range values, missing required fields, type mismatches.
    - **Concurrency hazards** (if relevant): re-entrance, shared mutable state, ordering.
    - **Documented invariants**: assertions in doc comments, README, CLAUDE.md, or the spec text.
@@ -87,4 +87,5 @@ Return ONLY valid JSON matching this shape. No prose outside the JSON.
 - Producing only happy-path work units. If you finish and >70% of your units are happy-path, you missed edge cases — re-enumerate.
 - Treating a private helper as a unit target. If it has no externally observable contract, don't test it directly; test through its public caller.
 - Inventing behaviors not supported by the source, docs, or spec. If unclear, leave the function untested and note it in `notes_to_orchestrator`.
+- Locking a serialization / JSON-shape contract for only **some** variants of an enum or sum type. If you pin the wire shape of one variant, pin **every** variant (each gets its own assertion in `intended_behavior`) — an unspecified variant is a hole an implementation can fill with any shape, undetected by the suite.
 - In spec mode, choosing a `target_stub_path` that collides with unrelated existing files. If a name collision is plausible, pick a more specific path.

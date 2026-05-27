@@ -1,3 +1,5 @@
+use crate::commands::detect_stack::detect_stack;
+use crate::common::cargo_target::{cargo_invocation, resolve_cargo_target, CargoInvocation};
 use crate::common::json_io::{parse_work_units_array, read_json_file};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
@@ -210,18 +212,41 @@ fn run_one_round(repo_root: &Path, stack: Stack, log_path: &Path, round: u32) ->
     let mut rust_out = String::new();
     let mut csharp_out = String::new();
     if matches!(stack, Stack::Rust | Stack::Both) {
-        let r: RunResult = run_with_timeout(
-            "cargo",
-            &["test", "--workspace", "--no-fail-fast"],
-            repo_root,
-            Duration::from_secs(900),
-        )?;
-        append_section(
-            log_path,
-            &format!("cargo test (exit {})", r.exit_code),
-            &r.combined_output,
-        )?;
-        rust_out = r.combined_output;
+        let manifests = detect_stack(repo_root)?.rust_manifests;
+        let target = resolve_cargo_target(&manifests, repo_root);
+        match cargo_invocation(&target, &["test", "--no-fail-fast"]) {
+            CargoInvocation::Run { cwd, args } => {
+                let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                let r: RunResult =
+                    run_with_timeout("cargo", &argv, &cwd, Duration::from_secs(900))?;
+                append_section(
+                    log_path,
+                    &format!("cargo test (exit {})", r.exit_code),
+                    &r.combined_output,
+                )?;
+                rust_out = r.combined_output;
+            }
+            CargoInvocation::Skip => {
+                // No Rust target — leave rust_out empty; units classify as NeverFound.
+            }
+            CargoInvocation::Ambiguous { candidates } => {
+                let joined = candidates
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                append_section(
+                    log_path,
+                    "cargo target resolution",
+                    &format!(
+                        "ambiguous-cargo-target: multiple crates with no root manifest: {}",
+                        joined
+                    ),
+                )?;
+                // Leave rust_out empty so tests classify as NeverFound/quarantined,
+                // never a silent pass.
+            }
+        }
     }
     if matches!(stack, Stack::Csharp | Stack::Both) {
         let r: RunResult = run_with_timeout(
