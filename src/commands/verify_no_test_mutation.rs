@@ -37,6 +37,7 @@ pub struct VerifyResult {
     pub violations: Vec<Violation>,
     pub deletions: Vec<Violation>,
     pub checked_count: usize,
+    pub no_files_checked: bool,
 }
 
 /// Re-hashes every file in `snapshot` and reports mismatches.
@@ -78,6 +79,7 @@ pub fn verify_no_test_mutation(snapshot: &TestSnapshot) -> anyhow::Result<Verify
         checked_count: snapshot.files.len(),
         violations,
         deletions,
+        no_files_checked: snapshot.files.is_empty(),
     })
 }
 
@@ -183,5 +185,63 @@ mod tests {
             crate::common::json_io::read_json_file(&snap_path).unwrap();
         let r = verify_no_test_mutation(&restored).unwrap();
         assert!(r.clean, "{:?}", r);
+    }
+
+    // --- new tests for no_files_checked field ---
+
+    #[test]
+    fn test_no_files_checked_signal_is_true_when_snapshot_is_empty() {
+        let td = TempDir::new().unwrap();
+        let snapshot = snapshot_test_files(td.path()).unwrap();
+        let r = verify_no_test_mutation(&snapshot).unwrap();
+        assert_eq!(r.checked_count, 0);
+        assert!(r.no_files_checked);
+    }
+
+    #[test]
+    fn test_no_files_checked_signal_is_false_with_one_file() {
+        let td = TempDir::new().unwrap();
+        write_file(&td, "tests/a.rs", "#[test] fn a() {}");
+        let snapshot = snapshot_test_files(td.path()).unwrap();
+        let r = verify_no_test_mutation(&snapshot).unwrap();
+        assert_eq!(r.checked_count, 1);
+        assert!(!r.no_files_checked);
+    }
+
+    #[test]
+    fn test_no_files_checked_signal_is_false_with_two_files() {
+        let td = TempDir::new().unwrap();
+        write_file(&td, "tests/a.rs", "#[test] fn a() {}");
+        write_file(&td, "tests/b.rs", "#[test] fn b() {}");
+        let snapshot = snapshot_test_files(td.path()).unwrap();
+        let r = verify_no_test_mutation(&snapshot).unwrap();
+        assert_eq!(r.checked_count, 2);
+        assert!(!r.no_files_checked);
+    }
+
+    #[test]
+    fn test_no_files_checked_is_independent_of_clean_when_violation_present() {
+        let td = TempDir::new().unwrap();
+        let path = write_file(&td, "tests/a.rs", "#[test] fn a() {}");
+        let snapshot = snapshot_test_files(td.path()).unwrap();
+        fs::write(&path, "#[test] fn a() { panic!(); }").unwrap();
+        let r = verify_no_test_mutation(&snapshot).unwrap();
+        assert!(!r.no_files_checked);
+        assert!(!r.clean);
+        assert!(!r.violations.is_empty());
+    }
+
+    #[test]
+    fn test_verify_result_serializes_no_files_checked_key() {
+        let result = VerifyResult {
+            clean: true,
+            violations: vec![],
+            deletions: vec![],
+            checked_count: 0,
+            no_files_checked: true,
+        };
+        let v = serde_json::to_value(&result).unwrap();
+        let field = v.get("no_files_checked").expect("key 'no_files_checked' must exist");
+        assert!(field.is_boolean(), "no_files_checked must serialize as a boolean, got: {field}");
     }
 }

@@ -32,7 +32,7 @@ In **regression-tests mode** (no `target_stub_path` on the work units), the sour
    b. Write a test function named exactly `output_test_name`.
    c. The test must verify `intended_behavior` and only that behavior. Do not over-specify (e.g., do not assert on intermediate state that isn't part of the contract).
    d. Follow the project's existing conventions:
-      - **Rust**: `#[test]` attribute, `#[should_panic]` only if the contract specifies a panic, `#[cfg(test)] mod tests` block for in-source tests, `use super::*;` to import the parent module. For async tests, use `#[tokio::test]` only if tokio is already a dev-dependency.
+      - **Rust**: `#[test]` attribute, `#[should_panic]` only if the contract specifies a panic, `#[cfg(test)] mod tests` block for in-source tests, `use super::*;` to import the parent module. For async tests, use `#[tokio::test]` only if tokio is already a dev-dependency. For boolean assertions use `assert!(cond)` / `assert!(!cond)`, **never** `assert_eq!(cond, true|false)` — the latter trips `clippy::bool_assert_comparison` and fails the `-D warnings` gate.
       - **C# (xUnit)**: `[Fact]` for parameterless tests, `[Theory]` + `[InlineData(...)]` for parameterized. Use `Assert.Equal`, `Assert.Throws<T>`, `Assert.IsType<T>`. Namespace and class name match the test project's convention.
    e. Make assertions specific. `Assert.True(result.IsOk)` is a vacuous test — use `Assert.Equal(expected_value, result.Unwrap())`. In Rust, prefer `assert_eq!(actual, expected)` over `assert!(actual == expected)` for better failure output.
    f. If the contract specifies error behavior, assert on the specific error variant — not just "an error was returned."

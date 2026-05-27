@@ -47,7 +47,7 @@ After bootstrap:
 
 - `cargo check --all-targets` - Fast type-check, no codegen
 - `cargo clippy --all-targets -- -D warnings` - Lint gate, must be clean
-- `cargo test --lib` - Runs the 163 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
+- `cargo test --lib` - Runs the 187 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
 - `cargo test --lib commands::detect_stack` - Single-module run by qualified path
 
 > Claude note: Cargo `test` takes exactly one filter positional - you can't pass two module paths in the same invocation. To run two modules, run two commands.
@@ -112,6 +112,7 @@ The Rust binary is also the *hook executor* — `regression-tests hook <event>` 
 - **`cargo test --lib` parallelism + env-mutating tests**: cargo runs tests in parallel threads of the same process. Tests that mutate `std::env` (e.g., setting a sentinel value in the parent) will race against any other test that reads the same variable. The current `sets_msbuild_env_var_on_child_only_not_parent` test works only because no test mutates `MSBUILDDISABLENODEREUSE` directly — a stronger sentinel-based variant was attempted and reverted (commit history). If you need to add env-touching tests, add `serial_test` as a dev-dependency and annotate.
 - **`subprocess.rs::tests::timeout_kills_entire_process_tree`** is Windows-gated (`#[cfg(windows)]`) and uses a unique `-w` ping tag (`88_000_000 + (pid % 100_000)`) to detect orphans via `Get-CimInstance Win32_Process`. The Linux/macOS implementation of `kill_process_tree` is stubbed; add an equivalent (`kill -- -$pgid` or similar) when cross-platform work begins.
 - **Schema-shape tests** like `stack_serializes_as_lowercase_string` guard the JSON output contract that the SKILL.md orchestrator consumes. Don't relax those — the orchestrator parses by exact field names and lowercase enum values (`"rust" | "csharp" | "both" | "none"`, `"unit" | "integration"`, etc.).
+- **No-silent-green guarantees (Finding 2)**: `verify_no_test_mutation` exposes `no_files_checked` (true when 0 files were snapshotted) and `run_new_tests` exposes `nothing_to_run` (true when 0 units collected) — both **orthogonal to `clean`/success** so the orchestrator branches on "checked nothing" loudly instead of mistaking a 0-check for a pass. `run_new_tests::name_survival(expected_red_names, green_statuses)` is the behavioral immutability backstop: a previously-RED test that goes `missing` (Unknown/absent → deleted, renamed, or `#[ignore]`-d) fails the survival gate (`ok == missing.is_empty() && regressed.is_empty() && !nothing_to_verify`; empty expected set → `nothing_to_verify` + not ok). `collect_units_by_name` selects units by name **ignoring the manually-flipped `status`** (so the gate can't no-op) and accepts the `{"work_units":[...]}` wrapper. Don't reintroduce a silent 0-check path.
 
 ## Git workflow notes
 
