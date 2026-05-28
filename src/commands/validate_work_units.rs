@@ -1,6 +1,14 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[derive(clap::Args, Debug)]
+pub struct Args {
+    #[arg(long)]
+    pub work_units_file: std::path::PathBuf,
+    #[arg(long, default_value_t = false)]
+    pub normalize: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UnitError {
     pub unit_id: Option<String>,
@@ -244,6 +252,29 @@ pub fn normalize_hint_fields(unit: &Value) -> Value {
         }
     }
     out
+}
+
+pub fn run(args: Args) -> anyhow::Result<()> {
+    let value: Value = crate::common::json_io::read_json_file(&args.work_units_file)?;
+
+    if args.normalize {
+        let units = crate::common::json_io::parse_work_units_array(&value).ok_or_else(|| {
+            anyhow::anyhow!(
+                "work-units input is neither a JSON array nor a {{work_units:[...]}} wrapper"
+            )
+        })?;
+        let normalized: Vec<Value> = units.iter().map(normalize_hint_fields).collect();
+        println!("{}", serde_json::to_string_pretty(&normalized)?);
+        Ok(())
+    } else {
+        let report = validate_work_units(&value);
+        println!("{}", serde_json::to_string_pretty(&report)?);
+        if report.valid {
+            Ok(())
+        } else {
+            std::process::exit(1);
+        }
+    }
 }
 
 #[cfg(test)]

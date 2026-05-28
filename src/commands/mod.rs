@@ -10,3 +10,4 @@ pub mod snapshot_tests;
 pub mod validate_work_units;
 pub mod verify_new_tests_compile;
 pub mod verify_no_test_mutation;
+pub mod workflow_script;

@@ -36,6 +36,10 @@ enum Commands {
     Preflight(commands::preflight::Args),
     #[command(name = "hook")]
     Hook(commands::hook::Args),
+    #[command(name = "workflow-script")]
+    WorkflowScript(commands::workflow_script::Args),
+    #[command(name = "validate-work-units")]
+    ValidateWorkUnits(commands::validate_work_units::Args),
 }
 
 fn main() -> anyhow::Result<()> {
@@ -52,5 +56,7 @@ fn main() -> anyhow::Result<()> {
         Commands::RunNewTests(a) => commands::run_new_tests::run(a),
         Commands::Preflight(a) => commands::preflight::run(a),
         Commands::Hook(a) => commands::hook::run(a),
+        Commands::WorkflowScript(a) => commands::workflow_script::run(a),
+        Commands::ValidateWorkUnits(a) => commands::validate_work_units::run(a),
     }
 }
