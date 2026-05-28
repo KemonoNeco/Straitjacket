@@ -1,14 +1,14 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "regression-tests",
-  "description": "Single-plugin marketplace for the regression-tests multi-agent test-engineering plugin (regression-locking + TDD).",
+  "name": "straightjacket",
+  "description": "Single-plugin marketplace for the straightjacket multi-agent test-engineering plugin (regression-locking + TDD).",
   "owner": {
     "name": "KemonoNeco"
   },
   "plugins": [
     {
-      "name": "regression-tests",
-      "description": "Multi-agent test-engineering plugin, two skills over one engine: `regression-tests` locks current behavior, `tdd` drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. Coverage planning + parallel authoring + adversarial specialist team + synthesis + mutation/fuzz, run as dynamic-Workflow stages when available (else direct Agent dispatch). Eleven specialist agents + implementation-author, and a Rust CLI `regression-tests`. Supports Rust and C#.",
+      "name": "straightjacket",
+      "description": "Multi-agent test-engineering plugin, two skills over one engine: `straightjacket` locks current behavior, `tdd` drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. Coverage planning + parallel authoring + adversarial specialist team + synthesis + mutation/fuzz, run as dynamic-Workflow stages when available (else direct Agent dispatch). Eleven specialist agents + implementation-author, and a Rust CLI `straightjacket`. Supports Rust and C#.",
       "author": {
         "name": "KemonoNeco"
       },

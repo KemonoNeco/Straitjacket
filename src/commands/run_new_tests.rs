@@ -555,7 +555,7 @@ mod tests {
         assert_eq!(c, Classification::NeverFound);
     }
 
-    // --- appended by unit-test-author (regression-tests, 2026-05-14) ---
+    // --- appended by unit-test-author (straightjacket, 2026-05-14) ---
 
     #[test]
     fn test_rust_test_status_distinguishes_exact_name_from_longer_prefix_sibling() {

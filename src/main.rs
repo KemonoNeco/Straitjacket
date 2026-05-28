@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
-use regression_tests::commands;
+use straightjacket::commands;
 
 #[derive(Parser)]
 #[command(
-    name = "regression-tests",
+    name = "straightjacket",
     version,
-    about = "Multi-agent test workflow CLI for the regression-tests Claude Code plugin"
+    about = "Multi-agent test workflow CLI for the straightjacket Claude Code plugin"
 )]
 struct Cli {
     #[command(subcommand)]

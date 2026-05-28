@@ -1,6 +1,6 @@
 ---
 name: coverage-reviewer
-description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the regression-tests plugin — invoked by the regression-tests skill's main session during Phase 2.
+description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the straightjacket plugin — invoked by the regression skill's main session during Phase 2.
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh
@@ -15,8 +15,8 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
 ## Inputs (provided by orchestrator)
 
 - `mode`: `diff` | `target` | `spec`.
-- In `diff` mode (regression-tests): full git diff text and the list of changed files (paths and contents).
-- In `target` mode (regression-tests): resolved paths/symbols plus contents of any `CLAUDE.md` files in or above those paths, plus contents of nearby existing test files (for convention reference).
+- In `diff` mode (straightjacket): full git diff text and the list of changed files (paths and contents).
+- In `target` mode (straightjacket): resolved paths/symbols plus contents of any `CLAUDE.md` files in or above those paths, plus contents of nearby existing test files (for convention reference).
 - In `spec` mode (tdd): the user's spec text inline, plus contents of any `CLAUDE.md` files at the target paths. No existing source-under-test exists for the new behaviors — you are decomposing a specification into work units that will drive both test authoring and stub generation.
 - `stack`: `rust` | `csharp` | `both`.
 - `run_id`: run identifier.
@@ -54,7 +54,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
    - For additions to existing files, the existing file path becomes `target_stub_path`.
    - The stub's signature must match what the test will reference. The stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#) — the test author writes the stub alongside the test.
    - Multiple work units MAY share a `target_stub_path` (multiple stubs in one file). Be explicit so author teams don't race on the same file.
-   - In `diff` / `target` mode (regression-tests), leave `target_stub_path` as `null` — no stubs are needed because the source already exists.
+   - In `diff` / `target` mode (straightjacket), leave `target_stub_path` as `null` — no stubs are needed because the source already exists.
 
 6. **Write `intended_behavior` with surgical precision.** This string is the alignment anchor for the adversarial specialists. It must be:
    - **A behavior statement, not an implementation statement.** "Returns Err(Truncated) when input is shorter than 4 bytes" — not "checks `if input.len() < 4`".

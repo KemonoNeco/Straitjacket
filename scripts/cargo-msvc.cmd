@@ -1,5 +1,5 @@
 @echo off
-REM Build/test the regression-tests crate from git bash (or any shell) on Windows.
+REM Build/test the straightjacket crate from git bash (or any shell) on Windows.
 REM
 REM Usage from the Bash tool / git bash:
 REM     cmd //c scripts\cargo-msvc.cmd test --lib

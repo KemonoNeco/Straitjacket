@@ -65,7 +65,7 @@
     },
     "target_stub_path": {
       "type": ["string", "null"],
-      "description": "Repo-relative path to the source file where the test-author writes a minimal stub (unimplemented! / NotImplementedException) so the test compiles-but-fails. Populated ONLY by the Coverage Reviewer in tdd-skill mode; null/absent in regression-tests-skill mode (where the source already exists and no stub is needed). May equal output_file_path for in-source unit tests in Rust.",
+      "description": "Repo-relative path to the source file where the test-author writes a minimal stub (unimplemented! / NotImplementedException) so the test compiles-but-fails. Populated ONLY by the Coverage Reviewer in tdd-skill mode; null/absent in straightjacket-skill mode (where the source already exists and no stub is needed). May equal output_file_path for in-source unit tests in Rust.",
       "default": null
     },
     "status": {

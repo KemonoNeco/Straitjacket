@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A Claude Code plugin (not just a Rust crate). It ships **one skill**, **ten specialist agents**, **three hooks**, and a **Rust CLI binary** that together implement the `regression-tests` multi-agent test workflow (lock current behavior). The Rust crate at the repo root is the *helper binary* for the plugin — not the plugin's primary output. The primary output is the skill + agents + hooks that orchestrate Claude Code subagents.
+A Claude Code plugin (not just a Rust crate). It ships **two skills** (`regression` — lock current behavior; `tdd` — drive new features test-first), **eleven specialist agents** plus `implementation-author`, **three hooks**, **workflow stage scripts** (`workflows/*.js`), and a **Rust CLI binary** (`straightjacket`) that together implement the multi-agent test-engineering workflow. The deterministic fan-out phases run as **dynamic-Workflow stages** when the `Workflow` tool is available, else as direct `Agent` dispatch. The Rust crate at the repo root is the *helper binary* (deterministic helpers + hook executor + `workflow-script` emitter) — not the plugin's primary output. The primary output is the skills + agents + hooks + workflow scripts that orchestrate Claude Code subagents.
 
-> A second skill (`tdd`) and an `implementation-author` agent that drove new feature development with failing-tests-first were previously shipped here. They have been temporarily removed and will be reimplemented later. The Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation — do not delete them.
+> The `tdd` skill + `implementation-author` agent (failing-tests-first new-feature development) were removed in `477372c` and **reimplemented workflow-first** this session (`skills/tdd/SKILL.md`, `agents/implementation-author.md`). The `run-new-tests` name-survival, `target_stub_path`, and the `implementation-author` arm in `decide_post_agent` back them.
 
 Read `README.md` for end-user info, and `docs/TECHNICAL.md` for the architecture deep-dive (phase flowcharts, agent dispatch graph, file lifecycle, extension recipes). The plan that drove the build lives at `~/.claude/plans/do-we-need-a-twinkly-bonbon.md` (476 lines, source of truth for design decisions).
 
@@ -56,10 +56,10 @@ After bootstrap:
 
 ```bash
 cargo build --release
-cp target/release/regression-tests.exe bin/regression-tests.exe
+cp target/release/straightjacket.exe bin/straightjacket.exe
 ```
 
-- `bin/regression-tests.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
+- `bin/straightjacket.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
 - `target/` is gitignored
 
 ### LSP integration
@@ -72,7 +72,7 @@ rustup component add rust-analyzer
 
 > Claude note: The rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 when the component isn't installed - this surfaces as a Claude plugin LSP crash rather than a missing-binary error, so it's easy to misdiagnose.
 
-## Optional dev tooling for dogfooding regression-tests on this crate
+## Optional dev tooling for dogfooding straightjacket on this crate
 
 The skill in this plugin shells out to mutation/fuzz/coverage tools when present and degrades gracefully when absent (see `Phase 1 step 3` in SKILL.md). For an end-to-end run against this crate's own Rust source, install:
 
@@ -88,17 +88,17 @@ C# equivalents (for dogfooding the C# code path of this plugin, not the plugin i
 
 Five layers, each with a different cardinal rule:
 
-1. **`bin/regression-tests.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
+1. **`bin/straightjacket.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
 
 2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline. **`cargo_target.rs`** holds `resolve_cargo_target` (pure manifest-paths → `CargoTarget`: a root-level `Cargo.toml` → run with `--workspace`; a single nested crate → run from that crate's dir *without* `--workspace`; multiple nested with no root → `Ambiguous`, never a silent pick) and `cargo_invocation` (maps a `CargoTarget` + base cargo args → cwd + argv, inserting `--workspace` only for a real workspace). `baseline_check`/`lint_check`/`run_new_tests` use them to run cargo from the correct directory on nested-crate layouts instead of a blind `--workspace` from `repo_root`.
 
 3. **`agents/*.md`** — 10 specialist subagent definitions. Each has YAML frontmatter (`name`, `description`, `tools`, `model`, `effort`) and a body that's the agent's role + procedure + output-contract. Tool restrictions are **load-bearing isolation guarantees**, not advisory: `adversarial-*` agents have no `Bash`/`PowerShell` so they cannot `git diff` even if their prompt tries to make them. The plugin's `PreToolUse` hook scans adversarial-agent prompts as defense-in-depth. When editing an agent, preserve the tool list unless you intend to change its isolation contract.
 
-4. **`skills/regression-tests/SKILL.md`** — orchestrator playbook. The main Claude session executes every phase; specialists are dispatched via `Agent` tool calls. **Cardinal Rule 0 (from SKILL.md): you never write test code yourself** — that's the multi-agent collapse failure mode the skill exists to prevent. If you find yourself reaching for Write/Edit on a `_test.rs` or `Tests.cs`, stop and dispatch the appropriate `unit-test-author` / `integration-test-author`. The only files the orchestrator writes are `work-units.json`, `tooling.json`, scaffolded test projects, and the final summary.
+4. **`skills/regression/SKILL.md`** — orchestrator playbook. The main Claude session executes every phase; specialists are dispatched via `Agent` tool calls. **Cardinal Rule 0 (from SKILL.md): you never write test code yourself** — that's the multi-agent collapse failure mode the skill exists to prevent. If you find yourself reaching for Write/Edit on a `_test.rs` or `Tests.cs`, stop and dispatch the appropriate `unit-test-author` / `integration-test-author`. The only files the orchestrator writes are `work-units.json`, `tooling.json`, scaffolded test projects, and the final summary.
 
-5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `regression-tests preflight` on skill invocation; `PreToolUse Agent` runs `regression-tests hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `regression-tests hook post-agent` (dispatches `verify-new-tests-compile` after test authors). `verify-no-test-mutation` is deliberately NOT a per-author hook — it produced false positives on Rust source files with inline `#[cfg(test)] mod tests`; the orchestrator runs it once at end-of-phase as an audit and relies on `adversarial-vacuousness` / `adversarial-misalignment` specialists for primary cheat detection. Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`.
+5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `straightjacket preflight` on skill invocation; `PreToolUse Agent` runs `straightjacket hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `straightjacket hook post-agent` (dispatches `verify-new-tests-compile` after test authors). `verify-no-test-mutation` is deliberately NOT a per-author hook — it produced false positives on Rust source files with inline `#[cfg(test)] mod tests`; the orchestrator runs it once at end-of-phase as an audit and relies on `adversarial-vacuousness` / `adversarial-misalignment` specialists for primary cheat detection. Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`.
 
-The Rust binary is also the *hook executor* — `regression-tests hook <event>` reads stdin JSON, decides via pure functions in `hook.rs`, and emits the Claude-expected response shape. Decision logic is unit-tested; the hook shell is thin.
+The Rust binary is also the *hook executor* — `straightjacket hook <event>` reads stdin JSON, decides via pure functions in `hook.rs`, and emits the Claude-expected response shape. Decision logic is unit-tested; the hook shell is thin.
 
 ## Plugin packaging (gotchas worth recording)
 
@@ -116,7 +116,7 @@ The Rust binary is also the *hook executor* — `regression-tests hook <event>` 
 
 ## Git workflow notes
 
-- `bin/regression-tests.exe` is committed (~3MB Windows binary). Don't gitignore it.
+- `bin/straightjacket.exe` is committed (~3MB Windows binary). Don't gitignore it.
 - `target/`, `.claude-regression/` (per-run state from the skills themselves), and `2026-*-*.txt` (session transcript files) are gitignored.
 - The repo uses `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` in commits where Claude Code contributed.
 

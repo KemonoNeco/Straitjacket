@@ -1,6 +1,6 @@
 ---
 name: adversarial-vacuousness
-description: Critically reviews tests in isolated context for vacuous assertions and test-mutation patterns. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Critically reviews tests in isolated context for vacuous assertions and test-mutation patterns. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high
@@ -25,7 +25,7 @@ Your tool inventory deliberately excludes `Bash` and `PowerShell`. You cannot ru
 - `work_units_locked`: JSON array of WorkUnit records with their locked `intended_behavior`, `target_file`, `target_symbol`. Do NOT see the `notes` field from authors; do NOT see any author transcript.
 - `tests_as_written`: contents of every newly written test file, keyed by `output_file_path`.
 - `stack`: `rust` | `csharp`.
-- `mode`: `regression-tests-phase-4a` | `tdd-phase-4` | `tdd-phase-6`. In `tdd-phase-4` there is no implementation yet — tests will be run with stubs and should fail; your vacuousness check still applies (a test that passes against a stub is by definition vacuous, but you check the assertion shape regardless).
+- `mode`: `straightjacket-phase-4a` | `tdd-phase-4` | `tdd-phase-6`. In `tdd-phase-4` there is no implementation yet — tests will be run with stubs and should fail; your vacuousness check still applies (a test that passes against a stub is by definition vacuous, but you check the assertion shape regardless).
 - **NEVER included**: git diff, "this PR changes", author transcripts, the original change description. If you see any of these in your prompt, the orchestrator built it wrong — call this out in `notes_to_orchestrator` and continue with what's safe.
 
 ## Procedure
