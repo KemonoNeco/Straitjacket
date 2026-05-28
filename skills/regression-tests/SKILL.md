@@ -22,9 +22,9 @@ You spawn these by `subagent_type` (bare name — the plugin namespace is implic
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | Phase 2. Single agent. Locks `intended_behavior`. |
 | `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team (chunk ~3-5 units/agent). |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team. |
-| `adversarial-vacuousness` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
-| `adversarial-happy-path` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
-| `adversarial-misalignment` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
+| `adversarial-vacuousness` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
+| `adversarial-happy-path` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
+| `adversarial-misalignment` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
 | `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | Phase 4a synthesis over the three specialists' reports. |
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | Phase 4a. Parallel team capped at 2-3. Mechanical. |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Phase 4b. Single. |
@@ -156,7 +156,7 @@ In a single message, spawn the three Phase 4a specialists in parallel. Then (aft
 
 ### 4a. Adversarial specialist team + synthesis
 
-**Three Sonnet specialists, single message, parallel:**
+**Three Opus specialists, single message, parallel:**
 
 Build a shared "no-diff" header containing:
 - `mode: "regression-tests-phase-4a"`.
@@ -260,6 +260,6 @@ Present the report verbatim to the user as your end-of-turn output.
 
 ## Notes
 
-- The skill spawns Opus and Sonnet specialists and may iterate up to 3 rounds. A non-trivial diff can cost 10-20 Opus turns plus 5-10 Sonnet turns. Print the budget estimate from Phase 1 step 9.
+- The skill spawns Opus agents (coverage-reviewer, integration-test-author, the three adversarial specialists, synthesis, fuzz-harness-author), Sonnet (unit-test-author), and Haiku runners, and may iterate up to 3 rounds. The adversarial trio is now Opus (chosen for critique catch-rate), so a non-trivial diff is mostly Opus turns — budget accordingly. Print the budget estimate from Phase 1 step 9.
 - All file artifacts live under `<repo>/.claude-regression/<run-id>/`.
 - The `regression-tests` CLI is on PATH via the plugin's `bin/` directory while the plugin is enabled.

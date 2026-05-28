@@ -139,9 +139,9 @@ Tool inventory:
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | single, Phase 2 |
 | `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | ≤6 parallel |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | ≤6 parallel |
-| `adversarial-vacuousness` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
-| `adversarial-happy-path` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
-| `adversarial-misalignment` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-vacuousness` | opus | xhigh | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-happy-path` | opus | xhigh | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-misalignment` | opus | xhigh | Read, Grep, Glob | 3 in parallel, one message |
 | `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | single, after specialists |
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | ≤3 parallel |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | single |
@@ -149,7 +149,7 @@ Tool inventory:
 
 **Tool restrictions are load-bearing.** The three `adversarial-*` specialists do *not* have `Bash` or `PowerShell`. They cannot `git diff`, cannot read git history, cannot shell out. That isolation from "what changed" is the structural guarantee that adversarial review is not anchored to author rationalizations. The plugin's `PreToolUse` hook adds defense-in-depth by scanning prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before the spawn.
 
-**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes. Sonnet 4.6 outperforms a multi-dimensional brief; a downstream Opus `adversarial-synthesis` dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern the plugin is built around.
+**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes — a focused single-lens brief beats one multi-dimensional reviewer. All three run on **Opus** (`xhigh`), chosen for critique catch-rate (Opus 4.8 lets flaws pass unremarked markedly less often), and a downstream Opus `adversarial-synthesis` dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern the plugin is built around. *Trade-off, recorded:* an all-Opus adversarial stack sacrifices some model-diversity independence for raw catch-rate; revisit by A/B-ing specialist models against mutation-survivor counts (the plugin's own instrument).
 
 **Why parallel-in-one-message.** Spawning the three adversarial specialists in *separate* messages serializes them - Claude Code only fans out `Agent` tool calls within a single response. Same applies to author chunks in Phase 3 and the synthesis/fuzz parallel pair in Phase 4.
 

@@ -7,5 +7,6 @@ pub mod preflight;
 pub mod reproducer_to_test;
 pub mod run_new_tests;
 pub mod snapshot_tests;
+pub mod validate_work_units;
 pub mod verify_new_tests_compile;
 pub mod verify_no_test_mutation;

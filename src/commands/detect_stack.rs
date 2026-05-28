@@ -1,3 +1,4 @@
+use crate::common::cargo_target::{resolve_cargo_target, CargoTarget};
 use crate::common::walk::{keep_entry, walk_source_files, SOURCE_TREE_EXCLUDES};
 use crate::common::Stack;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ pub struct DetectStackResult {
     pub rust_manifests: Vec<PathBuf>,
     pub csharp_projects: Vec<PathBuf>,
     pub csharp_solutions: Vec<PathBuf>,
+    pub cargo_target: CargoTarget,
 }
 
 /// Returns which stacks (rust, csharp, both, none) are present in `repo_root` along
@@ -42,11 +44,14 @@ pub fn detect_stack(repo_root: &Path) -> std::io::Result<DetectStackResult> {
         (false, false) => Stack::None,
     };
 
+    let cargo_target = resolve_cargo_target(&rust_manifests, repo_root);
+
     Ok(DetectStackResult {
         stack,
         rust_manifests,
         csharp_projects,
         csharp_solutions,
+        cargo_target,
     })
 }
 
@@ -184,12 +189,143 @@ mod tests {
             rust_manifests: vec![],
             csharp_projects: vec![],
             csharp_solutions: vec![],
+            cargo_target: CargoTarget::NoRustTarget,
         };
         let json = serde_json::to_string(&r).unwrap();
         assert!(
             json.contains("\"stack\":\"both\""),
             "stack must serialize as lowercase string: {}",
             json
+        );
+    }
+
+    // ─── cargo_target integration tests (TDD stubs — RED for 1/2/3, GREEN for 4/5) ─
+
+    #[test]
+    fn test_root_cargo_toml_yields_resolved_workspace_cargo_target() {
+        // RED: placeholder is NoRustTarget; expects Resolved { workspace: true }.
+        let td = TempDir::new().unwrap();
+        touch(&td.path().join("Cargo.toml"));
+        let result = detect_stack(td.path()).unwrap();
+        assert_eq!(
+            result.cargo_target,
+            CargoTarget::Resolved {
+                working_dir: td.path().to_path_buf(),
+                workspace: true,
+            },
+            "root Cargo.toml must produce Resolved {{ working_dir == repo_root, workspace == true }}"
+        );
+    }
+
+    #[test]
+    fn test_single_nested_crate_yields_resolved_non_workspace_cargo_target() {
+        // RED: placeholder is NoRustTarget; expects Resolved { workspace: false }.
+        let td = TempDir::new().unwrap();
+        touch(&td.path().join("cli").join("Cargo.toml"));
+        let result = detect_stack(td.path()).unwrap();
+        assert_eq!(
+            result.cargo_target,
+            CargoTarget::Resolved {
+                working_dir: td.path().join("cli"),
+                workspace: false,
+            },
+            "single nested Cargo.toml (no root) must produce Resolved {{ working_dir == cli dir, workspace == false }}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_nested_crates_no_root_yields_ambiguous_cargo_target() {
+        // RED: placeholder is NoRustTarget; expects Ambiguous.
+        let td = TempDir::new().unwrap();
+        touch(&td.path().join("cli").join("Cargo.toml"));
+        touch(&td.path().join("tools").join("Cargo.toml"));
+        let result = detect_stack(td.path()).unwrap();
+        match result.cargo_target {
+            CargoTarget::Ambiguous { mut candidates } => {
+                candidates.sort();
+                let mut expected = vec![td.path().join("cli"), td.path().join("tools")];
+                expected.sort();
+                assert_eq!(
+                    candidates, expected,
+                    "Ambiguous candidates must be the parent dirs of the manifests"
+                );
+            }
+            other => panic!(
+                "expected Ambiguous for multiple nested crates, got {:?}",
+                other
+            ),
+        }
+    }
+
+    #[test]
+    fn test_no_rust_manifests_yields_no_rust_target_cargo_target() {
+        // GREEN from placeholder: both placeholder and expected value are NoRustTarget.
+        let td = TempDir::new().unwrap();
+        let result = detect_stack(td.path()).unwrap();
+        assert_eq!(
+            result.cargo_target,
+            CargoTarget::NoRustTarget,
+            "empty repo must produce NoRustTarget"
+        );
+    }
+
+    #[test]
+    fn test_detect_stack_result_serializes_cargo_target_with_tagged_shape() {
+        // GREEN from placeholder: field + serde shape exist regardless of resolve logic.
+        use serde_json::Value;
+
+        // ── Resolved ──
+        let resolved = DetectStackResult {
+            stack: Stack::Rust,
+            rust_manifests: vec![],
+            csharp_projects: vec![],
+            csharp_solutions: vec![],
+            cargo_target: CargoTarget::Resolved {
+                working_dir: PathBuf::from("/some/project"),
+                workspace: true,
+            },
+        };
+        let v: Value = serde_json::to_value(&resolved).expect("serialize must not fail");
+        assert!(
+            v.get("cargo_target").is_some(),
+            "DetectStackResult must have a cargo_target key; got: {v}"
+        );
+        assert_eq!(
+            v["cargo_target"]["kind"].as_str(),
+            Some("resolved"),
+            "Resolved must serialize with kind == \"resolved\"; got: {v}"
+        );
+
+        // ── Ambiguous ──
+        let ambiguous = DetectStackResult {
+            stack: Stack::Rust,
+            rust_manifests: vec![],
+            csharp_projects: vec![],
+            csharp_solutions: vec![],
+            cargo_target: CargoTarget::Ambiguous {
+                candidates: vec![PathBuf::from("/a"), PathBuf::from("/b")],
+            },
+        };
+        let v2: Value = serde_json::to_value(&ambiguous).expect("serialize must not fail");
+        assert_eq!(
+            v2["cargo_target"]["kind"].as_str(),
+            Some("ambiguous"),
+            "Ambiguous must serialize with kind == \"ambiguous\"; got: {v2}"
+        );
+
+        // ── NoRustTarget ──
+        let no_rust = DetectStackResult {
+            stack: Stack::None,
+            rust_manifests: vec![],
+            csharp_projects: vec![],
+            csharp_solutions: vec![],
+            cargo_target: CargoTarget::NoRustTarget,
+        };
+        let v3: Value = serde_json::to_value(&no_rust).expect("serialize must not fail");
+        assert_eq!(
+            v3["cargo_target"]["kind"].as_str(),
+            Some("no_rust_target"),
+            "NoRustTarget must serialize with kind == \"no_rust_target\"; got: {v3}"
         );
     }
 }

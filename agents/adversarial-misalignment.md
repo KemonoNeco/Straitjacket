@@ -2,8 +2,8 @@
 name: adversarial-misalignment
 description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
-model: sonnet
-effort: high
+model: opus
+effort: xhigh
 ---
 
 ## Role

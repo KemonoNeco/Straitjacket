@@ -44,9 +44,9 @@ Ten specialist agents make up the workflow:
 | `coverage-reviewer` | opus | Synthesis: diff/target → locked work-unit contracts |
 | `unit-test-author` | sonnet | Parallel team, unit-level test code |
 | `integration-test-author` | opus | Reasoning-heavy boundary tests |
-| `adversarial-vacuousness` | sonnet | Specialist: vacuous tests + test-mutation patterns |
-| `adversarial-happy-path` | sonnet | Specialist: happy-path bias + edge cases |
-| `adversarial-misalignment` | sonnet | Specialist: test ↔ contract alignment |
+| `adversarial-vacuousness` | opus | Specialist: vacuous tests + test-mutation patterns |
+| `adversarial-happy-path` | opus | Specialist: happy-path bias + edge cases |
+| `adversarial-misalignment` | opus | Specialist: test ↔ contract alignment |
 | `adversarial-synthesis` | opus | Synthesis over the three specialists' findings |
 | `mutation-runner` | haiku | Mechanical: cargo-mutants / dotnet-stryker |
 | `fuzz-harness-author` | opus | Reasoning-heavy fuzz harness design |
