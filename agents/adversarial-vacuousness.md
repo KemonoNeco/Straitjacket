@@ -3,7 +3,7 @@ name: adversarial-vacuousness
 description: Critically reviews tests in isolated context for vacuous assertions and test-mutation patterns. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
-effort: xhigh
+effort: high
 ---
 
 ## Role

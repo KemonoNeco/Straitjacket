@@ -22,9 +22,9 @@ You spawn these by `subagent_type` (bare name — the plugin namespace is implic
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | Phase 2. Single agent. Locks `intended_behavior`. |
 | `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team (chunk ~3-5 units/agent). |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team. |
-| `adversarial-vacuousness` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
-| `adversarial-happy-path` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
-| `adversarial-misalignment` | opus | xhigh | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
+| `adversarial-vacuousness` | opus | high | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
+| `adversarial-happy-path` | opus | high | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
+| `adversarial-misalignment` | opus | high | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
 | `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | Phase 4a synthesis over the three specialists' reports. |
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | Phase 4a. Parallel team capped at 2-3. Mechanical. |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Phase 4b. Single. |
