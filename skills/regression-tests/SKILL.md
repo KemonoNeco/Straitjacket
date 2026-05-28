@@ -39,6 +39,19 @@ You spawn these by `subagent_type` (bare name — the plugin namespace is implic
 5. **Parallel spawns go in a single message** with multiple `Agent` tool-use blocks. Sequential messages defeat the concurrency. This applies to chunked author teams in Phase 3, the three adversarial specialists in Phase 4a, and the adversarial+fuzz pair in Phase 4.
 6. **Subagent response JSON parse failures**: retry once with a "your previous response was not valid JSON — return only valid JSON matching <schema>" prefix. After one retry, abort that work unit and continue.
 
+## Dispatch convention (workflow-first, with Agent fallback)
+
+This skill is **workflow-first**: the deterministic fan-out phases — Phase 3 authoring, and the Phase 4a adversarial team + synthesis + mutation — run as **dynamic-Workflow stages** when the `Workflow` tool is available, and fall back to direct `Agent` dispatch when it is not. The single Phase-2 `coverage-reviewer` and every merge/checkpoint stay in this main session (a workflow cannot pause, so each fan-out stage is its own invocation).
+
+**Capability check:** inspect your own available tools for one named `Workflow`.
+- **Present** → for a fan-out phase, run `regression-tests workflow-script <stage>` (Bash) to emit the stage script to stdout, capture it verbatim, and call `Workflow({script: <captured>, args: {...bindings}})`. The two stages:
+  - `fanout` (Phase 3 authoring) — `args.tasks = [{agentType, prompt, label}]` (one per author chunk), `args.cap = 6`.
+  - `adversarial` (Phase 4a) — `args = {workUnits, stack, mode: "lock", toolingAvailable, repoRoot}`; the script fans out the three specialists, runs `adversarial-synthesis`, then the mutation-runner team, and returns the canonical review + surviving mutants in one result.
+  Parse the structured result and merge into `work-units.json` (you stay the single writer). After the `fanout` authoring stage, run `regression-tests verify-new-tests-compile …` yourself (the PostToolUse hook does NOT fire for workflow-spawned agents).
+- **Absent** → dispatch the same agents directly via `Agent`, all parallel spawns in one message (the inline path described in each phase below).
+
+Either way the agents, prompts, schemas, and per-team caps are identical — the workflow only changes the dispatch substrate. **The diff is never a workflow binding**; adversarial specialists Read the post-change source themselves. Their `tools: Read, Grep, Glob` restriction holds for workflow-spawned agents too (spike-verified), so Rule 4 stands — but the PreToolUse diff-scan hook fires only in the Agent path, so in the workflow path isolation rests entirely on the tool restriction + you never passing the diff.
+
 ## Args
 
 Parse from the user's invocation. Recognized flags:
@@ -140,7 +153,7 @@ For each chunk, build a prompt header containing:
 - The pre-existing test snapshot file path so the author can avoid modifying existing files.
 - The locked `intended_behavior` per unit, plus the explicit rule: "You may CREATE `output_file_path`. You may NOT modify any test file listed in test-snapshot.json. You may NOT rewrite `intended_behavior`."
 
-**Spawn every author chunk in a single message** — one `Agent` tool-use block per chunk, all in parallel.
+**Spawn every author chunk in a single message** — one `Agent` tool-use block per chunk, all in parallel. *(Workflow path: pass each chunk's prompt + agentType as the `fanout` stage's `args.tasks`, `cap: 6` — see the Dispatch convention; then run `verify-new-tests-compile` yourself.)*
 
 The plugin's PostToolUse hook automatically runs `verify-new-tests-compile` after each author returns. If the hook blocks (compile failure), the diagnostic comes back to you for retry; re-dispatch the failing units with the diagnostic inlined. Allow one retry per unit; after that, mark `status: quarantined`.
 
@@ -155,6 +168,8 @@ Merge author results into `work-units.json`. For each successful unit, set `stat
 In a single message, spawn the three Phase 4a specialists in parallel. Then (after they return) run the synthesis pass, and in parallel with that the fuzz pipeline.
 
 ### 4a. Adversarial specialist team + synthesis
+
+> **Workflow path:** run the `adversarial` stage (`args.mode: "lock"`) — one invocation fans out the three specialists, then `adversarial-synthesis`, then the capped mutation-runner team, returning the canonical review + surviving mutants. The inline Agent-path steps below are the fallback when the `Workflow` tool is absent.
 
 **Three Opus specialists, single message, parallel:**
 

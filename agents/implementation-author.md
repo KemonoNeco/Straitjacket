@@ -73,7 +73,7 @@ Return exactly:
 }
 ```
 
-Return ONLY valid JSON. The post-impl hook (`regression-tests hook post-impl`) will run `verify-new-tests-compile` and `run-new-tests --expect=pass` against your output. Hook failure → diagnostics roundtrip → you get re-dispatched once.
+Return ONLY valid JSON. After your output, `verify-new-tests-compile` and `run-new-tests --expect pass` are run against it — by the `PostToolUse` `Agent` hook (`regression-tests hook post-agent`) in the legacy Agent-dispatch path, or by the tdd skill as explicit stage steps in workflow mode. Failure → diagnostics roundtrip → you are re-dispatched once.
 
 ## Anti-patterns to avoid
 
