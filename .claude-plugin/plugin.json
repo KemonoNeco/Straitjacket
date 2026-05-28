@@ -1,6 +1,6 @@
 {
   "name": "regression-tests",
-  "description": "Multi-agent regression-test workflow. The regression-tests skill locks current behavior with coverage planning + parallel test authoring + adversarial review specialist team + synthesis + mutation testing + fuzzing. Supports Rust (cargo + clippy + cargo-mutants + cargo-fuzz) and C# (dotnet + Stryker.NET + SharpFuzz). Ships a Rust binary `regression-tests` in bin/ exposing the deterministic helpers as subcommands.",
+  "description": "Multi-agent test-engineering plugin with two skills over one engine: `regression-tests` locks current behavior, and `tdd` drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. Shared pipeline: coverage planning + parallel authoring + adversarial specialist team + synthesis + mutation/fuzz, run as dynamic-Workflow stages when the Workflow tool is available (else direct Agent dispatch). Eleven specialist agents + implementation-author. Ships a Rust binary `regression-tests` in bin/ (deterministic helpers as subcommands; emits the workflow stage scripts). Supports Rust (cargo + clippy + cargo-mutants + cargo-fuzz) and C# (dotnet + Stryker.NET + SharpFuzz).",
   "version": "0.1.0",
   "author": {
     "name": "KemonoNeco"

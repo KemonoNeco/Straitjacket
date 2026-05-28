@@ -1,9 +1,9 @@
 {
-  "description": "Invariant enforcement for the regression-tests plugin. Three hooks: UserPromptExpansion runs preflight (baseline + lint) before the skill starts; PreToolUse on Agent scans adversarial-specialist prompts for diff leakage; PostToolUse on Agent dispatches verify-new-tests-compile and run-new-tests based on subagent_type. Test-mutation enforcement is handled at end-of-phase by the orchestrator (audit) plus the adversarial-vacuousness/misalignment specialists, not per-author.",
+  "description": "Invariant enforcement for the regression-tests plugin (both the regression-tests and tdd skills). Three hooks: UserPromptExpansion fires on either skill's invocation — the preflight hook currently ALLOWS and defers the real baseline/lint gate to the SKILL's Phase 1 (it does not run baseline+lint itself). PreToolUse on Agent scans adversarial-specialist prompts for diff leakage in the legacy Agent-dispatch path; it does NOT fire for workflow-spawned agents, where diff-isolation rests on the adversarial agents' Read/Grep/Glob-only tool restriction (verified by spike). PostToolUse on Agent dispatches verify-new-tests-compile / run-new-tests by subagent_type in the legacy path; in workflow mode the skill runs those as explicit stage steps. Test-mutation enforcement is the end-of-phase verify-no-test-mutation audit + the adversarial-vacuousness/misalignment specialists + behavioral name-survival, not a per-author SHA hook.",
   "hooks": {
     "UserPromptExpansion": [
       {
-        "matcher": "regression-tests:regression-tests|^regression-tests$",
+        "matcher": "regression-tests:regression-tests|regression-tests:tdd|^regression-tests$|^tdd$",
         "hooks": [
           {
             "type": "command",
