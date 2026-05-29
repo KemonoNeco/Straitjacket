@@ -95,7 +95,7 @@ Apply warranted additions/strengthenings (dispatch `unit-test-author` again), re
 
 Chunk units by `target_stub_path` (cap 4). Build each `implementation-author` prompt: `assigned_work_units`, `failing_tests` (contents), `stubbed_sources`, `stack`, `test_snapshot_path`, and the explicit **"you may NOT modify any test, period"** rule. Dispatch via the `fanout` stage (`agentType: "implementation-author"`, `cap: 4`).
 
-Then `verify-new-tests-compile` + `straightjacket run-new-tests … --expect pass`. Tests must now PASS. If a unit can't pass, re-dispatch once with the failing output; then mark `surfaced_bug` and surface it (do NOT weaken the test).
+Then `verify-new-tests-compile` + `straightjacket run-new-tests … --expect pass`. Tests must now PASS. If a unit can't pass, re-dispatch once with the failing output; then mark `surfaced_bug` and surface it (do NOT weaken the test). If you're parking that defect rather than fixing it now, invoke `straightjacket:report-bug` to capture it (map the unit's `target_stub_path`/`target_symbol`/`intended_behavior` → the bug's `suspect_files`/`suspect_symbol`/`intended_behavior_seed`) and continue.
 
 **▸ GATE — green check.** All locked tests pass + compile/clippy clean.
 

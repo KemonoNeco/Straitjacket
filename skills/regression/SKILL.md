@@ -233,7 +233,7 @@ This generates a deterministic regression test named after a hash of the input b
 
    Classify per the recommended status:
    - `all_pass` → `status: written`. Keep.
-   - `all_fail` → `status: surfaced_bug`. **ESCALATE in summary.**
+   - `all_fail` → `status: surfaced_bug`. **ESCALATE in summary.** If you will not fix it in this run, invoke `straightjacket:report-bug` to capture it (local-first; pass the failing unit's `target_file`/`target_symbol`/`intended_behavior` straight into the bug's `suspect_files`/`suspect_symbol`/`intended_behavior_seed`), then continue the run.
    - `flaky` → `status: quarantined`. Move to `<run_id>/quarantine/`.
 
 2. **Iteration check.** Trigger another round if:
