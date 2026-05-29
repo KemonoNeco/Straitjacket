@@ -148,18 +148,11 @@ pub fn parse_clippy_dead_code(json_lines: &str) -> Vec<Finding> {
     findings
 }
 
-/// CLI entry-point: runs `audit_command`, executes the tool, parses output, and writes
-/// results as JSON to stdout.
-pub fn run(args: Args) -> anyhow::Result<()> {
-    use crate::common::subprocess::run_with_timeout;
-    use std::time::Duration;
-
-    // `AuditTool` is Clone but not Copy; capture what we need by reference/format
-    // before moving `args.tool` into `audit_command`.
-    let is_clippy = args.tool == AuditTool::ClippyDeadCode;
-    // Kebab-case wire name — must match the schema + workflow lens names; the Debug repr
-    // (`ClippyDeadCode`) would break corroboration/joining downstream.
-    let tool_label = match &args.tool {
+/// Returns the canonical kebab-case wire name for `tool` — the form used in the
+/// schema, LLM lens names, and the audit workflow's corroboration/join logic.
+/// e.g. `AuditTool::ClippyDeadCode` → `"clippy-dead-code"`.
+pub fn tool_wire_name(tool: &AuditTool) -> &'static str {
+    match tool {
         AuditTool::ClippyDeadCode => "clippy-dead-code",
         AuditTool::CargoAudit => "cargo-audit",
         AuditTool::CargoDeny => "cargo-deny",
@@ -167,7 +160,18 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         AuditTool::CargoUdeps => "cargo-udeps",
         AuditTool::DotnetVulnerable => "dotnet-vulnerable",
     }
-    .to_string();
+}
+
+/// CLI entry-point: runs `audit_command`, executes the tool, parses output, and writes
+/// results as JSON to stdout.
+pub fn run(args: Args) -> anyhow::Result<()> {
+    use crate::common::subprocess::run_with_timeout;
+    use std::time::Duration;
+
+    // `AuditTool` is Clone but not Copy; capture what we need by reference
+    // before moving `args.tool` into `audit_command`.
+    let is_clippy = args.tool == AuditTool::ClippyDeadCode;
+    let tool_label = tool_wire_name(&args.tool).to_string();
 
     let result = match audit_command(args.tool, args.stack) {
         // Tool does not apply to this stack: nothing was scanned.
@@ -383,5 +387,20 @@ mod tests {
             "expected empty Vec for empty input, got: {:?} findings",
             findings.len()
         );
+    }
+
+    // ─── tool_wire_name: kebab-case wire-name contract ───────────────────────
+
+    #[test]
+    fn tool_wire_name_is_kebab_case_for_every_variant() {
+        // The wire name must be the kebab-case form used by the schema, LLM lens
+        // names, and the audit workflow's corroboration/join logic — NOT the
+        // camel-case Debug representation (e.g. "ClippyDeadCode").
+        assert_eq!(tool_wire_name(&AuditTool::ClippyDeadCode), "clippy-dead-code");
+        assert_eq!(tool_wire_name(&AuditTool::CargoAudit), "cargo-audit");
+        assert_eq!(tool_wire_name(&AuditTool::CargoDeny), "cargo-deny");
+        assert_eq!(tool_wire_name(&AuditTool::CargoGeiger), "cargo-geiger");
+        assert_eq!(tool_wire_name(&AuditTool::CargoUdeps), "cargo-udeps");
+        assert_eq!(tool_wire_name(&AuditTool::DotnetVulnerable), "dotnet-vulnerable");
     }
 }
