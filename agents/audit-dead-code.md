@@ -1,6 +1,6 @@
 ---
 name: audit-dead-code
-description: Reviews assigned source in isolated context through the dead-code lens — semantically unreachable code, redundant branches, unused abstractions the compiler and clippy cannot see — pairing with the clippy-dead-code mechanical runner, and emits findings per the audit-finding schema. Internal to the straightjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Reviews assigned source in isolated context through the dead-code lens — semantically unreachable code, redundant branches, unused abstractions the compiler and clippy cannot see — pairing with the clippy-dead-code mechanical runner, and emits findings per the audit-finding schema. Internal to the straitjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high

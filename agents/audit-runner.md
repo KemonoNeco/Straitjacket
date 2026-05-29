@@ -1,6 +1,6 @@
 ---
 name: audit-runner
-description: Runs one mechanical audit tool via `straightjacket audit-run` for a target and returns its JSON verbatim. Mechanical role — invoke the binary, return the result, no judgment. Internal to the straightjacket plugin — invoked during the audit capability's mechanical pass (parallel team, one runner per tool).
+description: Runs one mechanical audit tool via `straitjacket audit-run` for a target and returns its JSON verbatim. Mechanical role — invoke the binary, return the result, no judgment. Internal to the straitjacket plugin — invoked during the audit capability's mechanical pass (parallel team, one runner per tool).
 tools: Read, Bash, PowerShell, Glob
 model: haiku
 ---
@@ -20,18 +20,18 @@ Execute one mechanical audit-tool run for an assigned tool and return its JSON o
 1. **Resolve the command.** Invoke the plugin binary from `repo_root`:
 
    ```
-   straightjacket audit-run --tool <tool> --stack <stack> --repo-root <repo_root>
+   straitjacket audit-run --tool <tool> --stack <stack> --repo-root <repo_root>
    ```
 
    The binary owns tool discovery, invocation, and report parsing — it knows where each tool's report lands and how to read it. You do not call `cargo`/`dotnet` directly.
 
 2. **Execute and capture.** Run the command from `repo_root`. Capture its stdout (the JSON) and let it finish. If the tool is not installed, the binary reports that itself via `available: false` — that is a normal result, not an error to recover from.
 
-3. **Return the JSON verbatim.** Pass back exactly what `straightjacket audit-run` printed to stdout. Do not re-key it, summarize it, drop findings, or add fields. If stdout is not valid JSON, return it under `raw_stdout` with a one-line note.
+3. **Return the JSON verbatim.** Pass back exactly what `straitjacket audit-run` printed to stdout. Do not re-key it, summarize it, drop findings, or add fields. If stdout is not valid JSON, return it under `raw_stdout` with a one-line note.
 
 ## Output contract
 
-Return the `straightjacket audit-run` JSON unchanged. Its shape is:
+Return the `straitjacket audit-run` JSON unchanged. Its shape is:
 
 ```json
 {
@@ -50,4 +50,4 @@ Return the `straightjacket audit-run` JSON unchanged. Its shape is:
 - **Re-running on a different scope or with different flags.** One runner = one tool invocation = one report.
 - **Editing source code or test files.** You are read-only on the codebase.
 - **Treating `available: false` as an error.** A missing tool is a normal, expected result the binary reports for you — return it as-is.
-- **Calling `cargo`/`dotnet` directly.** Always go through `straightjacket audit-run`; the binary owns the tool-specific invocation and parsing.
+- **Calling `cargo`/`dotnet` directly.** Always go through `straitjacket audit-run`; the binary owns the tool-specific invocation and parsing.

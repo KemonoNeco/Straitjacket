@@ -1,6 +1,6 @@
 ---
 name: audit-security
-description: Reviews assigned source in isolated context through the security lens — injection, unsafe usage, secrets in code, unvalidated/untrusted input, auth/authz gaps — flagging the SEMANTIC issues the cargo-audit/deny/geiger mechanical runners cannot see, and emits findings per the audit-finding schema. Internal to the straightjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Reviews assigned source in isolated context through the security lens — injection, unsafe usage, secrets in code, unvalidated/untrusted input, auth/authz gaps — flagging the SEMANTIC issues the cargo-audit/deny/geiger mechanical runners cannot see, and emits findings per the audit-finding schema. Internal to the straitjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high

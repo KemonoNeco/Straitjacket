@@ -1,11 +1,11 @@
 use clap::{Parser, Subcommand};
-use straightjacket::commands;
+use straitjacket::commands;
 
 #[derive(Parser)]
 #[command(
-    name = "straightjacket",
+    name = "straitjacket",
     version,
-    about = "Multi-agent test workflow CLI for the straightjacket Claude Code plugin"
+    about = "Multi-agent test workflow CLI for the straitjacket Claude Code plugin"
 )]
 struct Cli {
     #[command(subcommand)]

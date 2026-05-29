@@ -1,7 +1,7 @@
 name: build-binaries
 
-# Cross-compiles the `straightjacket` helper binary for every platform the
-# launcher shims (bin/straightjacket, bin/straightjacket.cmd) dispatch to, then
+# Cross-compiles the `straitjacket` helper binary for every platform the
+# launcher shims (bin/straitjacket, bin/straitjacket.cmd) dispatch to, then
 # commits the refreshed binaries back into bin/ so installed plugins ship with a
 # native binary for the host (consumers have no Rust toolchain).
 #
@@ -76,19 +76,19 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/straightjacket" "dist/straightjacket-${{ matrix.target }}"
-          chmod +x "dist/straightjacket-${{ matrix.target }}"
+          cp "target/${{ matrix.target }}/release/straitjacket" "dist/straitjacket-${{ matrix.target }}"
+          chmod +x "dist/straitjacket-${{ matrix.target }}"
 
       - name: Stage artifact (windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/straightjacket.exe" "dist/straightjacket-${{ matrix.target }}.exe"
+          Copy-Item "target/${{ matrix.target }}/release/straitjacket.exe" "dist/straitjacket-${{ matrix.target }}.exe"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: straightjacket-${{ matrix.target }}
+          name: straitjacket-${{ matrix.target }}
           path: dist/*
           # upload-artifact drops the unix executable bit; the sync/release
           # jobs re-apply chmod +x before committing/packaging.
@@ -106,13 +106,13 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: incoming
-          pattern: straightjacket-*
+          pattern: straitjacket-*
           merge-multiple: true
 
       - name: Place binaries into bin/
         run: |
           cp incoming/* bin/
-          chmod +x bin/straightjacket-*-unknown-linux-gnu bin/straightjacket-*-apple-darwin
+          chmod +x bin/straitjacket-*-unknown-linux-gnu bin/straitjacket-*-apple-darwin
 
       - name: Commit refreshed binaries
         run: |
@@ -123,7 +123,7 @@ jobs:
             echo "No binary changes to commit."
             exit 0
           fi
-          git commit -m "ci: rebuild cross-platform straightjacket binaries [skip ci]"
+          git commit -m "ci: rebuild cross-platform straitjacket binaries [skip ci]"
           git push origin main
 
   release:
@@ -135,7 +135,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: incoming
-          pattern: straightjacket-*
+          pattern: straitjacket-*
           merge-multiple: true
 
       - name: Publish GitHub Release

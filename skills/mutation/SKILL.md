@@ -27,7 +27,7 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 ## Preflight
 
 1. Confirm a git repo; resolve `repo_root`; tree should be **green** (mutation is in the green-baseline preflight matcher — mutants are only meaningful against a passing suite). Generate `run_id`.
-2. `straightjacket detect-stack --repo-root <repo_root>` → `stack`.
+2. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
 3. Probe the mutation tool (`cargo mutants --version` / `dotnet stryker --version`) → `<run_id>/tooling.json`. **If absent → STOP** with a clear message (mutation has no static fallback).
 
 ## Run the mutation pass

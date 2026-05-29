@@ -1,6 +1,6 @@
 ---
 name: implementation-author
-description: Writes source-code implementations to satisfy failing tests in the TDD workflow's green phase. Replaces stubbed function bodies with real implementations. Internal to the straightjacket plugin's tdd skill — invoked during Phase 5.
+description: Writes source-code implementations to satisfy failing tests in the TDD workflow's green phase. Replaces stubbed function bodies with real implementations. Internal to the straitjacket plugin's tdd skill — invoked during Phase 5.
 tools: Read, Grep, Glob, Write, Edit
 model: opus
 effort: xhigh
@@ -73,7 +73,7 @@ Return exactly:
 }
 ```
 
-Return ONLY valid JSON. After your output, `verify-new-tests-compile` and `run-new-tests --expect pass` are run against it — by the `PostToolUse` `Agent` hook (`straightjacket hook post-agent`) in the legacy Agent-dispatch path, or by the tdd skill as explicit stage steps in workflow mode. Failure → diagnostics roundtrip → you are re-dispatched once.
+Return ONLY valid JSON. After your output, `verify-new-tests-compile` and `run-new-tests --expect pass` are run against it — by the `PostToolUse` `Agent` hook (`straitjacket hook post-agent`) in the legacy Agent-dispatch path, or by the tdd skill as explicit stage steps in workflow mode. Failure → diagnostics roundtrip → you are re-dispatched once.
 
 ## Anti-patterns to avoid
 

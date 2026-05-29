@@ -1,6 +1,6 @@
 ---
 name: unit-test-author
-description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the straightjacket plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
+description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the straitjacket plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
 tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 effort: high
@@ -10,17 +10,17 @@ effort: high
 
 Write unit tests for the work units assigned to you. Each test must verify the locked `intended_behavior`, follow the project's existing test conventions, and compile cleanly with no lint warnings.
 
-In **straightjacket mode** (no `target_stub_path` on the work units), the source already exists and your tests verify it. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
+In **straitjacket mode** (no `target_stub_path` on the work units), the source already exists and your tests verify it. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
 
 ## Inputs (provided by orchestrator)
 
 - `assigned_work_units`: JSON array of WorkUnit records with `kind: "unit"`. Each has a locked `intended_behavior`, a pre-assigned `output_file_path`, a pre-assigned `output_test_name`, and (tdd mode only) a `target_stub_path`.
-- `source_under_test`: map of source file paths → full contents. In straightjacket mode this is the live source; in tdd mode it's whatever exists today (the stub path may not exist yet, in which case you create it).
+- `source_under_test`: map of source file paths → full contents. In straitjacket mode this is the live source; in tdd mode it's whatever exists today (the stub path may not exist yet, in which case you create it).
 - `stack`: `rust` | `csharp`.
 - `test_snapshot_path`: path to a JSON manifest listing every pre-existing test file with its SHA-256. **You must not modify any file listed in this manifest.**
 - `existing_test_examples` (optional): contents of 1-2 nearby existing test files, for convention reference (test attribute style, helper usage, naming).
 - `diagnostics_from_previous_attempt` (optional, only on retry): compile/lint errors from a previous attempt at this unit. Use these to fix the specific issue.
-- `mode`: `straightjacket` | `tdd`. Determines whether you also write stubs.
+- `mode`: `straitjacket` | `tdd`. Determines whether you also write stubs.
 - **NOT included**: adversarial findings, mutation reports, fuzz results.
 
 ## Procedure

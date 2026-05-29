@@ -1,8 +1,8 @@
 [package]
-name = "straightjacket"
+name = "straitjacket"
 version = "0.1.0"
 edition = "2021"
-description = "Multi-agent test workflow CLI for the straightjacket Claude Code plugin"
+description = "Multi-agent test workflow CLI for the straitjacket Claude Code plugin"
 license = "MIT"
 
 [dependencies]

@@ -1,6 +1,6 @@
 ---
 name: mutation-runner
-description: Runs cargo-mutants or dotnet-stryker for a target and returns surviving mutants. Mechanical role — invoke the tool, parse the report, return JSON. Internal to the straightjacket plugin — invoked during the plugin's adversarial-validation stage and the mutation skill (parallel team capped at 2-3).
+description: Runs cargo-mutants or dotnet-stryker for a target and returns surviving mutants. Mechanical role — invoke the tool, parse the report, return JSON. Internal to the straitjacket plugin — invoked during the plugin's adversarial-validation stage and the mutation skill (parallel team capped at 2-3).
 tools: Read, Bash, PowerShell
 model: haiku
 ---

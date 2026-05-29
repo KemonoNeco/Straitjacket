@@ -1,5 +1,5 @@
 #![no_main]
-//! Fuzz harness for `straightjacket::commands::hook::decide_pre_adversarial`.
+//! Fuzz harness for `straitjacket::commands::hook::decide_pre_adversarial`.
 //!
 //! This is a security boundary — the function decides whether a prompt
 //! delivered to an adversarial-* specialist is allowed through. A bypass
@@ -17,7 +17,7 @@
 //! and the implementation.
 
 use libfuzzer_sys::fuzz_target;
-use straightjacket::commands::hook::{
+use straitjacket::commands::hook::{
     decide_pre_adversarial, HookDecision, FORBIDDEN_ADVERSARIAL_STRINGS,
 };
 

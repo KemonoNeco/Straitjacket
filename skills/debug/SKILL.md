@@ -1,6 +1,6 @@
 ---
 name: debug
-description: "Root-cause ONE bug from a green tree — understand the defect and its cause WITHOUT fixing it. Dispatches a single root-cause-analyst agent that reproduces, instruments via Bash, reverts, and leaves the tree exactly green, returning a root_cause + reproduction + the three test-bridge fields (suspect_files / suspect_symbol / intended_behavior_seed). Use when the user says 'debug this', 'why does X happen', 'find the root cause', or 'investigate this bug/crash/failure'. Diagnosis-only: it does not write a fix or a test — hand the diagnosis to straightjacket:triage (or tdd fix-mode) to turn it into a failing test + fix. Supports Rust and C#."
+description: "Root-cause ONE bug from a green tree — understand the defect and its cause WITHOUT fixing it. Dispatches a single root-cause-analyst agent that reproduces, instruments via Bash, reverts, and leaves the tree exactly green, returning a root_cause + reproduction + the three test-bridge fields (suspect_files / suspect_symbol / intended_behavior_seed). Use when the user says 'debug this', 'why does X happen', 'find the root cause', or 'investigate this bug/crash/failure'. Diagnosis-only: it does not write a fix or a test — hand the diagnosis to straitjacket:triage (or tdd fix-mode) to turn it into a failing test + fix. Supports Rust and C#."
 ---
 
 # debug
@@ -8,7 +8,7 @@ description: "Root-cause ONE bug from a green tree — understand the defect and
 ## Cardinal Rule 0 — YOU DIAGNOSE, YOU DO NOT FIX
 
 This skill **understands a bug and its cause; it never fixes it and never authors a test.**
-Fixing is `straightjacket:triage` (or `tdd` fix-mode); test-writing is the multi-agent engine.
+Fixing is `straitjacket:triage` (or `tdd` fix-mode); test-writing is the multi-agent engine.
 Your residual role is thin: start from a known-green tree, dispatch the investigator, and **own
 the savepoint** — the tree must end exactly as green as it started.
 
@@ -25,7 +25,7 @@ not restate it.
 ## Args
 
 - `<bug>` — an inline description of the defect (the failing behavior, the symptom). OR:
-- `--id <bug-id>` — pull an existing record from the bug ledger (`<repo>/.straightjacket/bugs.json`)
+- `--id <bug-id>` — pull an existing record from the bug ledger (`<repo>/.straitjacket/bugs.json`)
   and investigate it; its `suspect_files` / `suspect_symbol` seed the scope.
 - `--files a,b` — repo-relative path(s) the user already suspects; narrows the analyst's scope.
 
@@ -34,13 +34,13 @@ At least one of `<bug>` / `--id` is required; `--files` is an optional scope hin
 ## Preflight (this session)
 
 1. Confirm the working dir is a git repo (else abort); resolve `repo_root`.
-2. **Confirm the tree is green/clean** — `straightjacket verify-tree-clean --repo-root <repo_root>`
+2. **Confirm the tree is green/clean** — `straitjacket verify-tree-clean --repo-root <repo_root>`
    → `{clean, dirty_files}`. If `clean` is false, stop and report `dirty_files`: debug operates
    **from a green state** (it is in the `UserPromptExpansion` green-baseline preflight matcher, so
    the gate also fires on invocation). A diagnosis from a dirty tree can't promise a clean savepoint.
 3. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.claude-regression/<run_id>/`;
    append `.claude-regression/` to `.gitignore` if absent.
-4. `straightjacket detect-stack --repo-root <repo_root>` → `stack`.
+4. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
 5. If `--id` was given, read the record and carry its `suspect_files` / `suspect_symbol` /
    `summary` / `expected` / `actual` into the analyst's prompt as context (not as conclusions).
 
@@ -66,7 +66,7 @@ session): the bug (inline text and/or the ledger record's fields), the `--files`
 
 ## Restore the savepoint (this session)
 
-After the analyst returns, re-run `straightjacket verify-tree-clean --repo-root <repo_root>`. If
+After the analyst returns, re-run `straitjacket verify-tree-clean --repo-root <repo_root>`. If
 `clean` is false, **restore the tree** (`git checkout -- <dirty_files>` / `git reset --hard` to
 the pre-run HEAD) before reporting — the analyst is supposed to revert, but the savepoint is yours
 to guarantee mechanically. Never present a diagnosis over a dirty tree.
@@ -76,7 +76,7 @@ to guarantee mechanically. Never present a diagnosis over a dirty tree.
 1. **`--id` record given** → write back the analyst's findings to that record (you may use the
    ledger directly here): refresh `suspect_files` / `suspect_symbol` / `intended_behavior_seed`,
    append the `root_cause` + `reproduction` to `notes`. Leave `status` as-is (debug doesn't fix).
-2. **Inline bug, real defect** → offer to capture it via `straightjacket:report-bug` (map the
+2. **Inline bug, real defect** → offer to capture it via `straitjacket:report-bug` (map the
    analyst's `suspect_files` / `suspect_symbol` / `intended_behavior_seed` straight onto the
    BugRecord fields) so the diagnosis becomes a durable, liftable ledger record.
 3. **Reproduction failed** → say so plainly. An unreproduced symptom is reported as a hypothesis
@@ -90,12 +90,12 @@ to guarantee mechanically. Never present a diagnosis over a dirty tree.
 - **Suspect location**: `suspect_files` + `suspect_symbol`.
 - **Intended behavior seed**: the contract sentence for the *correct* behavior (the fix-mode seed).
 - **Savepoint**: confirmation the tree is green (and whether you had to restore it).
-- **Hand-off**: `straightjacket:triage` (or `tdd` fix-mode seeded with `intended_behavior_seed`)
+- **Hand-off**: `straitjacket:triage` (or `tdd` fix-mode seeded with `intended_behavior_seed`)
   turns this diagnosis into a failing test for the correct behavior + a fix. **debug does not fix.**
 
 ## Notes
 
 - One Opus turn (the `root-cause-analyst`) plus a couple of CLI calls; no fan-out, no workflow.
 - All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
-  `<repo>/.straightjacket/bugs.json` is tracked/committed. The `straightjacket` CLI is on `PATH`
+  `<repo>/.straitjacket/bugs.json` is tracked/committed. The `straitjacket` CLI is on `PATH`
   via the plugin's `bin/`.

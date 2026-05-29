@@ -1,10 +1,10 @@
 #!/bin/sh
-# Cross-platform launcher for the straightjacket CLI.
+# Cross-platform launcher for the straitjacket CLI.
 # Dispatches to the prebuilt binary matching the host OS/arch. Committed
-# binaries are named straightjacket-<rust-target-triple>[.exe] and produced by
+# binaries are named straitjacket-<rust-target-triple>[.exe] and produced by
 # .github/workflows/build-binaries.yml. This file is invoked both via PATH
-# (bare `straightjacket` from the skills) and by an explicit
-# ${CLAUDE_PLUGIN_ROOT}/bin/straightjacket path (hooks), so it must stay
+# (bare `straitjacket` from the skills) and by an explicit
+# ${CLAUDE_PLUGIN_ROOT}/bin/straitjacket path (hooks), so it must stay
 # extensionless and executable, and must print nothing of its own to stdout
 # (hooks read the dispatched binary's stdout as JSON).
 set -e
@@ -18,32 +18,32 @@ case "$(uname -s)" in
   # so this sh launcher owns the Windows-under-a-POSIX-shell path and dispatches
   # the .exe itself.
   MINGW*|MSYS*|CYGWIN*) vendor_os="pc-windows-msvc" ;;
-  *) echo "straightjacket: unsupported OS '$(uname -s)'" >&2; exit 1 ;;
+  *) echo "straitjacket: unsupported OS '$(uname -s)'" >&2; exit 1 ;;
 esac
 
 case "$(uname -m)" in
   x86_64|amd64)  cpu="x86_64" ;;
   arm64|aarch64) cpu="aarch64" ;;
-  *) echo "straightjacket: unsupported arch '$(uname -m)'" >&2; exit 1 ;;
+  *) echo "straitjacket: unsupported arch '$(uname -m)'" >&2; exit 1 ;;
 esac
 
 # Windows binaries carry a .exe suffix. Windows-on-ARM runs the x64 build under
 # emulation and only the x64 .exe ships, so fall back to x86_64 unless a native
-# aarch64 Windows binary is actually present (mirrors bin/straightjacket.cmd).
+# aarch64 Windows binary is actually present (mirrors bin/straitjacket.cmd).
 exe=""
 if [ "$vendor_os" = "pc-windows-msvc" ]; then
   exe=".exe"
-  if [ "$cpu" = "aarch64" ] && [ ! -e "$dir/straightjacket-aarch64-pc-windows-msvc.exe" ]; then
+  if [ "$cpu" = "aarch64" ] && [ ! -e "$dir/straitjacket-aarch64-pc-windows-msvc.exe" ]; then
     cpu="x86_64"
   fi
 fi
 
-bin="$dir/straightjacket-$cpu-$vendor_os$exe"
+bin="$dir/straitjacket-$cpu-$vendor_os$exe"
 if [ ! -e "$bin" ]; then
-  echo "straightjacket: no prebuilt binary for $cpu-$vendor_os at $bin" >&2
+  echo "straitjacket: no prebuilt binary for $cpu-$vendor_os at $bin" >&2
   exit 127
 elif [ ! -x "$bin" ]; then
-  echo "straightjacket: prebuilt binary at $bin is not executable (try: chmod +x $bin)" >&2
+  echo "straitjacket: prebuilt binary at $bin is not executable (try: chmod +x $bin)" >&2
   exit 127
 fi
 

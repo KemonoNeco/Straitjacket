@@ -1,6 +1,6 @@
 // tdd-cycle.js — the consolidated TDD workflow stage.
 //
-// Emitted by `straightjacket workflow-script tdd-cycle` and run via the Workflow tool's
+// Emitted by `straitjacket workflow-script tdd-cycle` and run via the Workflow tool's
 // inline `script`. With the interactive contract-review removed, tdd has no human-input
 // stop left — every gate (red / green / iterate) is an automated assertion — so the whole
 // cycle runs as ONE resumable workflow instead of a skill re-invoking a stage per phase.
@@ -8,7 +8,7 @@
 // The runtime has no shell/FS of its own, so:
 //   - authoring/impl agents Write the test/stub/impl files themselves (they have Write/Edit);
 //   - the red/green/compile gates run via the mechanical `gate-runner` agent, which writes
-//     work-units.json from the array this script hands it and runs the straightjacket CLI.
+//     work-units.json from the array this script hands it and runs the straitjacket CLI.
 //     Within this workflow the gate-runner is the single SEQUENTIAL writer of work-units.json
 //     (the script serializes gate calls), preserving the spirit of Cardinal Rule 1.
 //
@@ -103,7 +103,7 @@ function chunk(arr, size) {
 // Run one CLI gate through the gate-runner agent; returns its parsed cli_result (or null).
 async function runGate(gate, units, { expect, phaseName } = {}) {
   const res = await agent([
-    `You are the gate-runner. Run the straightjacket gate and return its JSON verdict verbatim.`,
+    `You are the gate-runner. Run the straitjacket gate and return its JSON verdict verbatim.`,
     `gate: ${gate}`,
     `repo_root: ${repoRoot}`,
     `work_units_path: ${workUnitsPath}`,
@@ -113,7 +113,7 @@ async function runGate(gate, units, { expect, phaseName } = {}) {
     gate === 'verify-no-test-mutation' && testSnapshotPath ? `snapshot_file: ${testSnapshotPath}` : '',
     `work_units (write this to work_units_path verbatim, then run the command):`,
     JSON.stringify({ work_units: units }, null, 2),
-  ].filter(Boolean).join('\n'), { agentType: 'straightjacket:gate-runner', schema: GATE_SCHEMA, phase: phaseName, label: gate })
+  ].filter(Boolean).join('\n'), { agentType: 'straitjacket:gate-runner', schema: GATE_SCHEMA, phase: phaseName, label: gate })
   return (res && res.cli_result) || null
 }
 
@@ -156,9 +156,9 @@ function specialistPrompt(dim, units, mode) {
 // Run the 3-specialist → synthesis adversarial pass inline (mode: pre_impl | post_green).
 async function adversarial(units, mode) {
   const reports = (await parallel([
-    () => agent(specialistPrompt('vacuousness', units, mode), { agentType: 'straightjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'vacuousness' }),
-    () => agent(specialistPrompt('happy-path', units, mode), { agentType: 'straightjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'happy-path' }),
-    () => agent(specialistPrompt('misalignment', units, mode), { agentType: 'straightjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'misalignment' }),
+    () => agent(specialistPrompt('vacuousness', units, mode), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'vacuousness' }),
+    () => agent(specialistPrompt('happy-path', units, mode), { agentType: 'straitjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'happy-path' }),
+    () => agent(specialistPrompt('misalignment', units, mode), { agentType: 'straitjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'misalignment' }),
   ])).filter(Boolean)
 
   const synthesis = await agent([
@@ -171,7 +171,7 @@ async function adversarial(units, mode) {
       ? `POST-GREEN: emit mutation_runner_tasks for the surviving-mutant hunt + any new_work_unit_proposals.`
       : `PRE-implementation (no impl exists yet): emit ranked test additions/strengthenings as new_work_unit_proposals; leave mutation_runner_tasks empty.`,
     `Return ONLY JSON matching the adversarial-synthesis output contract.`,
-  ].join('\n'), { agentType: 'straightjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'synthesis' })
+  ].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'synthesis' })
 
   return { reports, synthesis }
 }
@@ -199,7 +199,7 @@ const coverage = await agent([
   `per unit (so the test compiles-but-fails against a stub). Enumerate edge cases, not just happy paths.`,
   `Specification:`, spec,
   `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
-].join('\n'), { agentType: 'straightjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
+].join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
 
 let units = (coverage && coverage.work_units) || []
 const lockedContracts = units.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
@@ -216,8 +216,8 @@ while (round < maxRounds && units.length) {
   round += 1
 
   phase('Author')
-  await fanout(units, (u) => u.kind === 'unit', authorCap, authorPrompt, 'straightjacket:unit-test-author', 'Author')
-  await fanout(units, (u) => u.kind === 'integration', authorCap, authorPrompt, 'straightjacket:integration-test-author', 'Author')
+  await fanout(units, (u) => u.kind === 'unit', authorCap, authorPrompt, 'straitjacket:unit-test-author', 'Author')
+  await fanout(units, (u) => u.kind === 'integration', authorCap, authorPrompt, 'straitjacket:integration-test-author', 'Author')
 
   phase('RedCheck')
   await runGate('verify-new-tests-compile', units, { phaseName: 'RedCheck' })
@@ -237,7 +237,7 @@ while (round < maxRounds && units.length) {
   // Tests LOCK after this point (read-only). Strengthenings, if any, would be authored + re-red-checked.
 
   phase('Implement')
-  await fanout(units, () => true, implCap, implPrompt, 'straightjacket:implementation-author', 'Implement')
+  await fanout(units, () => true, implCap, implPrompt, 'straitjacket:implementation-author', 'Implement')
 
   phase('GreenCheck')
   await runGate('verify-new-tests-compile', units, { phaseName: 'GreenCheck' })
@@ -278,7 +278,7 @@ while (round < maxRounds && units.length) {
         agent([
           `Run mutation testing for ${t.target_path || t.target_file} (scope: ${t.scope || 'file'}, stack: ${stack}).`,
           `repo_root: ${repoRoot}`, `Return surviving mutants as JSON.`,
-        ].join('\n'), { agentType: 'straightjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'PostGreen', label: `mutation:${t.target_path || t.target_file}` })))
+        ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'PostGreen', label: `mutation:${t.target_path || t.target_file}` })))
       roundMutants = roundMutants.concat(r.filter(Boolean).flatMap((m) => m.surviving_mutants || []))
     }
   }

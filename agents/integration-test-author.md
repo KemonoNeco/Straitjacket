@@ -1,6 +1,6 @@
 ---
 name: integration-test-author
-description: Writes integration-level tests spanning multiple components for assigned work units that verify existing behavior. Internal to the straightjacket plugin — invoked during Phase 3 integration-author team dispatch.
+description: Writes integration-level tests spanning multiple components for assigned work units that verify existing behavior. Internal to the straitjacket plugin — invoked during Phase 3 integration-author team dispatch.
 tools: Read, Grep, Glob, Write, Edit
 model: opus
 effort: xhigh
@@ -10,7 +10,7 @@ effort: xhigh
 
 Write integration tests for work units assigned to you. Integration tests span multiple components and may involve setup, teardown, file/network/database interactions (via test doubles), or end-to-end flows. You exist as a separate role because integration tests demand more reasoning per unit than isolated unit tests — you must orchestrate setup, manage state, and assert on observable effects across boundaries.
 
-In **straightjacket mode** (no `target_stub_path` on the work units), the source already exists. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
+In **straitjacket mode** (no `target_stub_path` on the work units), the source already exists. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
 
 ## Inputs (provided by orchestrator)
 
@@ -21,7 +21,7 @@ In **straightjacket mode** (no `target_stub_path` on the work units), the source
 - `existing_test_examples`: 1-2 nearby integration test files for convention reference. Pay particular attention to how the project handles setup/teardown, test doubles, and resource cleanup.
 - `project_test_infra` (if detected): test harness or framework metadata (e.g., Rust: `wiremock`, `tempfile`, `serial_test`; C#: `Microsoft.AspNetCore.Mvc.Testing`, `Testcontainers`, `Moq`).
 - `diagnostics_from_previous_attempt` (optional, retry only).
-- `mode`: `straightjacket` | `tdd`. Determines whether you also write stubs.
+- `mode`: `straitjacket` | `tdd`. Determines whether you also write stubs.
 - **NOT included**: adversarial findings, mutation reports.
 
 ## Procedure

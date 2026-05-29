@@ -1,6 +1,6 @@
 ---
 name: adversarial-vacuousness
-description: Critically reviews tests in isolated context for vacuous assertions and test-mutation patterns. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the plugin's adversarial-validation stage. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Critically reviews tests in isolated context for vacuous assertions and test-mutation patterns. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straitjacket plugin — invoked during the plugin's adversarial-validation stage. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high

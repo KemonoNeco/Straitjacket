@@ -1,13 +1,13 @@
 {
-  "description": "Invariant enforcement for the straightjacket plugin. Three hooks: UserPromptExpansion fires on the green-baseline skills (tdd, mutation, fuzz, debug) — the preflight hook currently ALLOWS and defers the real baseline/lint gate to the skill's Phase 1 (audit/triage/report-bug are excluded: audit is read-only analysis, triage routes, report-bug captures fast). PreToolUse on Agent scans adversarial-specialist prompts for diff leakage in the legacy Agent-dispatch path; it does NOT fire for workflow-spawned agents, where diff-isolation (adversarial AND audit specialists) rests on their Read/Grep/Glob-only tool restriction (verified by spike). PostToolUse on Agent dispatches verify-new-tests-compile / run-new-tests by subagent_type in the legacy path; in workflow mode the skill runs those as explicit stage steps. Test-mutation enforcement is the end-of-phase verify-no-test-mutation audit + the adversarial-vacuousness/misalignment specialists + behavioral name-survival, not a per-author SHA hook.",
+  "description": "Invariant enforcement for the straitjacket plugin. Three hooks: UserPromptExpansion fires on the green-baseline skills (tdd, mutation, fuzz, debug) — the preflight hook currently ALLOWS and defers the real baseline/lint gate to the skill's Phase 1 (audit/triage/report-bug are excluded: audit is read-only analysis, triage routes, report-bug captures fast). PreToolUse on Agent scans adversarial-specialist prompts for diff leakage in the legacy Agent-dispatch path; it does NOT fire for workflow-spawned agents, where diff-isolation (adversarial AND audit specialists) rests on their Read/Grep/Glob-only tool restriction (verified by spike). PostToolUse on Agent dispatches verify-new-tests-compile / run-new-tests by subagent_type in the legacy path; in workflow mode the skill runs those as explicit stage steps. Test-mutation enforcement is the end-of-phase verify-no-test-mutation audit + the adversarial-vacuousness/misalignment specialists + behavioral name-survival, not a per-author SHA hook.",
   "hooks": {
     "UserPromptExpansion": [
       {
-        "matcher": "straightjacket:tdd|straightjacket:mutation|straightjacket:fuzz|straightjacket:debug|^tdd$|^mutation$|^fuzz$|^debug$",
+        "matcher": "straitjacket:tdd|straitjacket:mutation|straitjacket:fuzz|straitjacket:debug|^tdd$|^mutation$|^fuzz$|^debug$",
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straightjacket hook preflight"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straitjacket hook preflight"
           }
         ]
       }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straightjacket hook pre-adversarial",
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straitjacket hook pre-adversarial",
             "timeout": 5
           }
         ]
@@ -30,7 +30,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straightjacket hook post-agent"
+            "command": "${CLAUDE_PLUGIN_ROOT}/bin/straitjacket hook post-agent"
           }
         ]
       }

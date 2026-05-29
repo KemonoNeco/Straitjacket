@@ -1,6 +1,6 @@
 ---
 name: adversarial-synthesis
-description: Synthesizes the three adversarial specialists' findings (vacuousness, happy-path, misalignment) into the canonical adversarial review output. Dedupes overlapping findings, ranks by severity, produces mutation runner task list. Internal to the straightjacket plugin — invoked during the plugin's adversarial-validation stage, after the three specialists return.
+description: Synthesizes the three adversarial specialists' findings (vacuousness, happy-path, misalignment) into the canonical adversarial review output. Dedupes overlapping findings, ranks by severity, produces mutation runner task list. Internal to the straitjacket plugin — invoked during the plugin's adversarial-validation stage, after the three specialists return.
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh

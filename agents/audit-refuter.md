@@ -1,6 +1,6 @@
 ---
 name: audit-refuter
-description: The skeptic of the audit capability — given the full set of LLM-sourced findings (claim + evidence + source only, never the finder's private reasoning) and the source, votes refute / survive / uncertain on each, defaulting to refute whatever it cannot independently confirm from the code. Internal to the straightjacket plugin — runs after the lens finders, before audit-synthesis. Operates in isolated context with no Bash/PowerShell.
+description: The skeptic of the audit capability — given the full set of LLM-sourced findings (claim + evidence + source only, never the finder's private reasoning) and the source, votes refute / survive / uncertain on each, defaulting to refute whatever it cannot independently confirm from the code. Internal to the straitjacket plugin — runs after the lens finders, before audit-synthesis. Operates in isolated context with no Bash/PowerShell.
 tools: Read, Grep, Glob
 model: opus
 effort: high

@@ -25,8 +25,8 @@ this skill does not restate it.
 ## Preflight
 
 1. Confirm a git repo; resolve `repo_root`; tree should be **green** (fuzz is in the green-baseline preflight matcher). Generate `run_id`.
-2. `straightjacket detect-stack --repo-root <repo_root>` → `stack`.
-3. `straightjacket fuzz-setup --repo-root <repo_root> --stack <stack>` — probe the fuzz toolchain (Rust: `cargo-fuzz` + nightly; C#: SharpFuzz) and list existing fuzz targets. **If the toolchain is absent → STOP** with a clear message (fuzzing cannot degrade to static — unlike audit/mutation, there is no fallback). Record presence in `<run_id>/tooling.json`.
+2. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
+3. `straitjacket fuzz-setup --repo-root <repo_root> --stack <stack>` — probe the fuzz toolchain (Rust: `cargo-fuzz` + nightly; C#: SharpFuzz) and list existing fuzz targets. **If the toolchain is absent → STOP** with a clear message (fuzzing cannot degrade to static — unlike audit/mutation, there is no fallback). Record presence in `<run_id>/tooling.json`.
 
 ## Run the fuzz pass
 
@@ -34,12 +34,12 @@ this skill does not restate it.
 2. **Run the harnesses.** Dispatch the `fuzz-runner` team — **capped at 2** — over the runner tasks. Workflow path: the `fanout` stage (`tasks` = one per runner, `cap: 2`); read the runners' shape off the stage's `raw` (each returns `{crashes:[...]}`, not `results`). Agent path: spawn the runners in one message. Each returns crash artifacts (path, SHA-256, trace).
 3. **Mine crashes into tests.** For each crash artifact, run:
    ```
-   straightjacket reproducer-to-test --repro-path <path> --target-file <file> \
+   straitjacket reproducer-to-test --repro-path <path> --target-file <file> \
      --target-function <symbol> --stack <stack> --repo-root <repo_root> \
      --work-units-file <run_id>/work-units.json
    ```
    This writes a deterministic regression test (named by the input hash) into a `regressions/` test module and appends a WorkUnit.
-4. **Verify** the mined regression tests run: `straightjacket run-new-tests --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>` (branch on `nothing_to_run`). A mined test that does not now fail-then-pin the crash is a `surfaced_bug` — escalate, do not silence.
+4. **Verify** the mined regression tests run: `straitjacket run-new-tests --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>` (branch on `nothing_to_run`). A mined test that does not now fail-then-pin the crash is a `surfaced_bug` — escalate, do not silence.
 
 ## Final summary (present verbatim)
 
@@ -51,5 +51,5 @@ this skill does not restate it.
 
 ## Notes
 
-- A single Opus `fuzz-harness-author` + a capped Haiku `fuzz-runner` team. Artifacts under `<repo>/.claude-regression/<run_id>/`; the `straightjacket` CLI is on `PATH` via the plugin's `bin/`.
+- A single Opus `fuzz-harness-author` + a capped Haiku `fuzz-runner` team. Artifacts under `<repo>/.claude-regression/<run_id>/`; the `straitjacket` CLI is on `PATH` via the plugin's `bin/`.
 - To turn a parked fuzz finding into a fix, hand the reproducer to `tdd` fix-mode / `triage`.

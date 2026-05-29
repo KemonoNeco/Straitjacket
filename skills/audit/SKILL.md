@@ -36,17 +36,17 @@ often audit *because* the tree is unhealthy.
 
 1. Confirm a git repo; resolve `repo_root`. (No green-baseline gate — audit is read-only.)
 2. Generate `run_id`; create `<repo_root>/.claude-regression/<run_id>/`.
-3. `straightjacket detect-stack --repo-root <repo_root>` → `stack`.
+3. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
 4. **Probe mechanical tools** for the stack and keep only the available ones (degrade gracefully):
    - Rust: `clippy-dead-code` (always — clippy ships with rust), `cargo-audit`, `cargo-deny`, `cargo-geiger`, `cargo-udeps` (each only if installed).
    - C#: `dotnet-vulnerable` (always — ships with dotnet).
-   - Probe by running `straightjacket audit-run --tool <t> --stack <stack> --repo-root <repo_root>` and treating `available:false` as "skip, note as degraded."
+   - Probe by running `straitjacket audit-run --tool <t> --stack <stack> --repo-root <repo_root>` and treating `available:false` as "skip, note as degraded."
 
 ## Run the audit
 
 **Capability check:** inspect your own tools for one named `Workflow`.
 
-- **Present →** `straightjacket workflow-script audit` (Bash) emits the script; run
+- **Present →** `straitjacket workflow-script audit` (Bash) emits the script; run
   `Workflow({script, args})` with: `auditScope` (the resolved files/dirs/symbols),
   `stack`, `lenses` (the selected lens names), `mechanicalTools` (the available tools),
   `repoRoot`, `skeptics`. **Never** pass a diff — the lenses Read the scope themselves.
@@ -60,7 +60,7 @@ The stage returns `{ confirmed_findings, refuted_findings, uncertain_findings,
 mechanical_findings, lens_coverage, refutation_summary, synthesis_status }`. Write all of it to
 `audit-findings.json`, then route each **confirmed** finding by its `disposition`:
 
-- **`bug_record`** → unless `--no-file`, file it via `straightjacket:report-bug` (local ledger
+- **`bug_record`** → unless `--no-file`, file it via `straitjacket:report-bug` (local ledger
   first; remotes opt-in). The finding's `title/summary/expected/actual/severity` and bridge fields
   (`suspect_files`/`suspect_symbol`/`intended_behavior_seed`) map 1:1 onto the BugRecord — pass
   them straight through. report-bug's local dedupe guard prevents double-filing.
@@ -86,4 +86,4 @@ mechanical_findings, lens_coverage, refutation_summary, synthesis_status }`. Wri
 
 - Mostly Opus turns (the lens finders + refuter + synthesis) plus Haiku `audit-runner`s.
 - All artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
-  `<repo>/.straightjacket/bugs.json` is tracked/committed. The CLI is on `PATH` via the plugin's `bin/`.
+  `<repo>/.straitjacket/bugs.json` is tracked/committed. The CLI is on `PATH` via the plugin's `bin/`.

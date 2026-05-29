@@ -95,10 +95,10 @@ pub fn is_plugin_skill_invocation(command_name: &str) -> bool {
     // We accept both `plugin:skill` form and bare `skill` form for robustness.
     matches!(
         command_name,
-        "straightjacket:tdd"
-            | "straightjacket:mutation"
-            | "straightjacket:fuzz"
-            | "straightjacket:debug"
+        "straitjacket:tdd"
+            | "straitjacket:mutation"
+            | "straitjacket:fuzz"
+            | "straitjacket:debug"
             | "tdd"
             | "mutation"
             | "fuzz"
@@ -296,10 +296,10 @@ mod tests {
     #[test]
     fn plugin_skill_invocation_matcher_accepts_namespaced_and_bare() {
         for name in [
-            "straightjacket:tdd",
-            "straightjacket:mutation",
-            "straightjacket:fuzz",
-            "straightjacket:debug",
+            "straitjacket:tdd",
+            "straitjacket:mutation",
+            "straitjacket:fuzz",
+            "straitjacket:debug",
             "tdd",
             "mutation",
             "fuzz",
@@ -318,11 +318,11 @@ mod tests {
         assert!(!is_plugin_skill_invocation(""));
         assert!(!is_plugin_skill_invocation("other-plugin:tdd"));
         // Retired skill must no longer trigger the preflight.
-        assert!(!is_plugin_skill_invocation("straightjacket:regression"));
+        assert!(!is_plugin_skill_invocation("straitjacket:regression"));
         // Read-only / router / capture skills deliberately skip the green-baseline gate.
-        assert!(!is_plugin_skill_invocation("straightjacket:audit"));
-        assert!(!is_plugin_skill_invocation("straightjacket:triage"));
-        assert!(!is_plugin_skill_invocation("straightjacket:report-bug"));
+        assert!(!is_plugin_skill_invocation("straitjacket:audit"));
+        assert!(!is_plugin_skill_invocation("straitjacket:triage"));
+        assert!(!is_plugin_skill_invocation("straitjacket:report-bug"));
     }
 
     #[test]
@@ -402,8 +402,8 @@ mod tests {
     #[test]
     fn test_extract_command_name_falls_back_to_top_level_field() {
         // Top-level `command_name` field (no `prompt` wrapper) — exercises the or_else branch.
-        let payload = serde_json::json!({ "command_name": "straightjacket:tdd" });
-        assert_eq!(extract_command_name(&payload), "straightjacket:tdd");
+        let payload = serde_json::json!({ "command_name": "straitjacket:tdd" });
+        assert_eq!(extract_command_name(&payload), "straitjacket:tdd");
     }
 
     #[test]
