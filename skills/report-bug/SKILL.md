@@ -1,6 +1,6 @@
 ---
 name: report-bug
-description: "Capture a bug the moment it is found — write a tracked local record first, then optionally mirror it to a GitHub issue and/or a Jira ticket — so you can keep working on the current task and fix it later. Use when a bug, defect, crash, failing assertion, wrong output, or regression is discovered and should be filed without derailing the work in progress; when the user says 'file a bug', 'open an issue', 'report this', 'log this defect', 'track this for later', or 'create a ticket'; and as a side-call from the straightjacket regression/tdd workflows when a run surfaces a real bug it will not fix in that run. Writes a JSON ledger at .straightjacket/bugs.json that a later regression/tdd run can lift into test work units. Supports GitHub (gh CLI, github MCP fallback) and Jira (atlassian MCP)."
+description: "Capture a bug the moment it is found — write a tracked local record first, then optionally mirror it to a GitHub issue and/or a Jira ticket — so you can keep working on the current task and fix it later. Use when a bug, defect, crash, failing assertion, wrong output, or regression is discovered and should be filed without derailing the work in progress; when the user says 'file a bug', 'open an issue', 'report this', 'log this defect', 'track this for later', or 'create a ticket'; and as a side-call from the straightjacket regression/tdd workflows when a run surfaces a real bug it will not fix in that run. Writes a JSON ledger at .straightjacket/bugs.json structured so a later regression/tdd run can lift it into test work units. Supports GitHub (gh CLI, github MCP fallback) and Jira (atlassian MCP). This is the fast local-first capture path with a local-only dedupe guard; use atlassian:triage-issue instead when the goal is interactive Jira duplicate-hunting and triage rather than capture-and-continue."
 ---
 
 # report-bug
@@ -64,11 +64,13 @@ Determine the destination set from, in order: the explicit invocation request �
 #### GitHub — `gh` CLI primary, github MCP fallback
 
 1. Probe: `gh auth status` (and `gh repo view --json nameWithOwner` to resolve the repo, unless config pins `github_repo`). Not authenticated / `gh` absent → fall back to a github MCP server if one is connected (e.g. `mcp__plugin_github_github__issue_write` with `method: "create"`, owner/repo/title/body); MCP also unavailable → skip GitHub, note it, keep going.
-2. Create the issue. Title = record `title`. Body = the rendered template (below). Labels: `bug` + a severity label (`severity:high` etc.) + any record `labels`.
+2. Create the issue. Title = record `title`. Body = the rendered template (below — the body carries severity, so the issue is fully self-describing even with no labels).
    ```bash
-   gh issue create --title "<title>" --body-file <tmp> --label "bug" --label "severity:<severity>"
+   gh issue create --title "<title>" --body-file <tmp> [--label <existing-label> ...]
    ```
    Write the body to a temp file under `$CLAUDE_JOB_DIR/tmp` (or an OS temp path) — never inline a multi-line body on the command line.
+
+   **Labels are best-effort and must NEVER fail the mirror.** `gh issue create` errors out if a passed label does not already exist in the repo (it does not auto-create labels) — a fresh repo ships `bug` but almost never `severity:high`. So: list existing labels first (`gh label list --json name -q '.[].name'`), pass `--label` only for names that already exist (plus any record `labels` that exist), and **omit `--label` entirely if unsure**. Optionally create missing ones first (`gh label create "severity:<sev>" 2>/dev/null` — ignore failure). If a create call still fails citing a label, retry once with no `--label` flags. Never drop the whole GitHub mirror over a label.
 3. Capture the returned issue URL + number into `remote.github`.
 
 #### Jira — atlassian MCP
@@ -101,6 +103,8 @@ Omit any destination that was skipped, and say *why* (e.g. "jira: skipped — no
 Render this for both the GitHub issue body and the Jira description:
 
 ```markdown
+**Severity:** <severity>
+
 ## Summary
 <summary>
 
@@ -149,4 +153,4 @@ Absent config → local-only, infer GitHub repo from cwd, ask for the Jira proje
 ## Relationship to other skills
 
 - **`atlassian:triage-issue`** does heavyweight Jira *duplicate hunting* and interactive triage. `report-bug` is the lightweight fast-capture path — local-first, dedupe is local-only, and it doesn't interrupt a host workflow. Use `triage-issue` when the goal *is* triage; use `report-bug` when the goal is "log it and move on."
-- **`straightjacket:regression` / `straightjacket:tdd`** can invoke this skill when a run surfaces a real bug outside the current scope, then keep running. Conversely, a future regression/tdd run can read `.straightjacket/bugs.json` and lift `open` records into test work units via the three bridge fields above.
+- **`straightjacket:regression` / `straightjacket:tdd`** invoke this skill from their `surfaced_bug` branches when a run finds a real bug outside the current scope, then keep running (the write side — wired today). The records are *structured so* a future regression/tdd run can lift an `open` record into a test work unit via the three bridge fields above; in **target mode**, regression's coverage step optionally seeds from the ledger (see its Phase 2). There is intentionally no automatic ledger-read in diff mode — how a non-diff ledger entry should enter a diff-oriented coverage phase is a deliberate judgment call left to the user.

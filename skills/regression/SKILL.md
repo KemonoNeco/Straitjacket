@@ -122,7 +122,7 @@ The plugin's `UserPromptExpansion` hook fires on the slash-command invocation an
 Build the spawn header containing:
 - `mode`: `diff` or `target`.
 - In diff mode: the full `diff` text and the list of changed files.
-- In target mode: the resolved file/symbol paths, plus contents of any `CLAUDE.md` in or above those paths.
+- In target mode: the resolved file/symbol paths, plus contents of any `CLAUDE.md` in or above those paths. **Optional ledger seed:** if `<repo_root>/.straightjacket/bugs.json` exists (written by `straightjacket:report-bug`), include any `open` records whose `suspect_files` intersect the target scope; the reviewer may turn each one's `intended_behavior_seed` into a work unit's `intended_behavior` (bridge fields `suspect_files`→`target_file`, `suspect_symbol`→`target_symbol`). This is the read side of the report-bug loop — opt-in, target mode only.
 - `stack`: `rust` | `csharp` | `both`.
 - `run_id` and `output_dir`.
 - The work-unit JSON schema (`schemas/work-unit.schema.json`).
