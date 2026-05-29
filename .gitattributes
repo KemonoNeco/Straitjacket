@@ -1,0 +1,5 @@
+# The POSIX launcher must keep LF endings — a CRLF shebang breaks `/bin/sh` on
+# Unix ("bad interpreter"). The prebuilt binaries are binary blobs.
+bin/straightjacket        text eol=lf
+bin/straightjacket-*      binary
+*.sh                      text eol=lf
