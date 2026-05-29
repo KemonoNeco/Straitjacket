@@ -60,8 +60,14 @@ The specialist agents that make up the workflow:
 | `fuzz-harness-author` | opus | Reasoning-heavy fuzz harness design |
 | `fuzz-runner` | haiku | Mechanical: cargo-fuzz / SharpFuzz |
 | `implementation-author` | opus | Fills stubs (tdd green) or fixes buggy source (fix mode); never edits tests |
+| `gate-runner` | haiku | Mechanical: runs one straightjacket CLI gate (run-new-tests / verify-*) inside `tdd-cycle` |
+| `audit-<lens>` (×7) | opus | Isolated source-audit finders, one per lens: latent-bug, security, performance, dead-code, doc-drift, concurrency, error-handling |
+| `audit-runner` | haiku | Mechanical: runs one `straightjacket audit-run --tool …` → normalized findings |
+| `audit-refuter` | opus | Skeptic: votes refute/survive/uncertain over LLM findings; defaults to refute when unconfirmable |
+| `audit-synthesis` | opus | Dedupes/ranks audit survivors + mechanical findings, assigns disposition (distinct from `adversarial-synthesis`) |
+| `root-cause-analyst` | opus | The debugger (debug/triage): root-causes one bug from green, never fixes |
 
-The `audit-<lens>` finders + `audit-runner`/`audit-refuter`/`audit-synthesis` (for `audit`) and `root-cause-analyst` (for `debug`) are added as those skills land. See [docs/STAGES.md#specialist-agent-roster](docs/STAGES.md#specialist-agent-roster) for the full tool inventory and concurrency limits.
+The seven `audit-<lens>` finders all run `opus` at `high` effort with `Read, Grep, Glob` only — the no-`Bash` restriction is their load-bearing diff/exec-isolation guarantee. See [docs/STAGES.md#specialist-agent-roster](docs/STAGES.md#specialist-agent-roster) for the full tool inventory and concurrency limits.
 
 ## Hooks
 
