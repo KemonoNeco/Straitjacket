@@ -254,16 +254,40 @@ pub fn normalize_hint_fields(unit: &Value) -> Value {
     out
 }
 
+/// Normalizes the hint fields of every work unit while preserving the input's top-level shape:
+/// a `{"work_units":[...], ...}` wrapper keeps its sibling metadata (e.g. `scope_summary`) and a
+/// bare array stays a bare array. Returns `None` if the input is neither shape. Pure.
+pub fn normalize_preserving_shape(value: &Value) -> Option<Value> {
+    let mut out = value.clone();
+    match &mut out {
+        Value::Array(units) => {
+            for unit in units.iter_mut() {
+                *unit = normalize_hint_fields(unit);
+            }
+            Some(out)
+        }
+        Value::Object(obj) => match obj.get_mut("work_units") {
+            Some(Value::Array(units)) => {
+                for unit in units.iter_mut() {
+                    *unit = normalize_hint_fields(unit);
+                }
+                Some(out)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 pub fn run(args: Args) -> anyhow::Result<()> {
     let value: Value = crate::common::json_io::read_json_file(&args.work_units_file)?;
 
     if args.normalize {
-        let units = crate::common::json_io::parse_work_units_array(&value).ok_or_else(|| {
+        let normalized = normalize_preserving_shape(&value).ok_or_else(|| {
             anyhow::anyhow!(
                 "work-units input is neither a JSON array nor a {{work_units:[...]}} wrapper"
             )
         })?;
-        let normalized: Vec<Value> = units.iter().map(normalize_hint_fields).collect();
         println!("{}", serde_json::to_string_pretty(&normalized)?);
         Ok(())
     } else {
@@ -579,6 +603,34 @@ mod tests {
         unit["expected"] = json!(["x", "y"]);
         let result = normalize_hint_fields(&unit);
         assert_eq!(result["expected"], json!("x; y"));
+    }
+
+    // --- normalize_preserving_shape tests ---
+
+    #[test]
+    fn test_normalize_preserving_shape_keeps_wrapper_metadata() {
+        let mut unit = valid_unit();
+        unit["inputs"] = json!(["a", "b"]);
+        let input = json!({ "work_units": [unit], "scope_summary": "diff against HEAD~3" });
+        let result = normalize_preserving_shape(&input).unwrap();
+        assert_eq!(result["scope_summary"], json!("diff against HEAD~3"));
+        assert_eq!(result["work_units"][0]["inputs"], json!("a; b"));
+    }
+
+    #[test]
+    fn test_normalize_preserving_shape_bare_array_stays_array() {
+        let mut unit = valid_unit();
+        unit["inputs"] = json!(["a", "b"]);
+        let input = json!([unit]);
+        let result = normalize_preserving_shape(&input).unwrap();
+        assert!(result.is_array());
+        assert_eq!(result[0]["inputs"], json!("a; b"));
+    }
+
+    #[test]
+    fn test_normalize_preserving_shape_rejects_unsupported_shape() {
+        assert!(normalize_preserving_shape(&json!({ "nope": 1 })).is_none());
+        assert!(normalize_preserving_shape(&json!("scalar")).is_none());
     }
 
     // --- validate_work_units: wrong-type tests (9–11) ---
