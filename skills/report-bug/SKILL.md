@@ -1,13 +1,13 @@
 ---
 name: report-bug
-description: "Capture a bug the moment it is found — write a tracked local record first, then optionally mirror it to a GitHub issue and/or a Jira ticket — so you can keep working on the current task and fix it later. Use when a bug, defect, crash, failing assertion, wrong output, or regression is discovered and should be filed without derailing the work in progress; when the user says 'file a bug', 'open an issue', 'report this', 'log this defect', 'track this for later', or 'create a ticket'; and as a side-call from the straightjacket regression/tdd workflows when a run surfaces a real bug it will not fix in that run. Writes a JSON ledger at .straightjacket/bugs.json structured so a later regression/tdd run can lift it into test work units. Supports GitHub (gh CLI, github MCP fallback) and Jira (atlassian MCP). This is the fast local-first capture path with a local-only dedupe guard; use atlassian:triage-issue instead when the goal is interactive Jira duplicate-hunting and triage rather than capture-and-continue."
+description: "Capture a bug the moment it is found — write a tracked local record first, then optionally mirror it to a GitHub issue and/or a Jira ticket — so you can keep working on the current task and fix it later. Use when a bug, defect, crash, failing assertion, wrong output, or regression is discovered and should be filed without derailing the work in progress; when the user says 'file a bug', 'open an issue', 'report this', 'log this defect', 'track this for later', or 'create a ticket'; and as a side-call from the straightjacket tdd workflow (and triage) when a run surfaces a real bug it will not fix in that run. Writes a JSON ledger at .straightjacket/bugs.json structured so a later tdd (target/fix-mode) run can lift it into test work units. Supports GitHub (gh CLI, github MCP fallback) and Jira (atlassian MCP). This is the fast local-first capture path with a local-only dedupe guard; use atlassian:triage-issue instead when the goal is interactive Jira duplicate-hunting and triage rather than capture-and-continue."
 ---
 
 # report-bug
 
 ## Cardinal Rule 0 — CAPTURE FAST, DON'T DERAIL
 
-This skill exists to **catch a bug and let you keep going**. It is often invoked in the middle of another task (a feature, a refactor, a `straightjacket:regression` / `straightjacket:tdd` run). Treat it as an interrupt that must return control quickly:
+This skill exists to **catch a bug and let you keep going**. It is often invoked in the middle of another task (a feature, a refactor, a `straightjacket:tdd` run). Treat it as an interrupt that must return control quickly:
 
 - **Write the local record FIRST**, before any network call. A bug must never be lost because a backend is unauthenticated, a repo is unconfigured, or the host workflow is interrupted.
 - **Remote mirroring is opt-in.** Default behavior is local-only. Only create a GitHub issue / Jira ticket when the user asked for it, a config enables it, or the invocation requested it.
@@ -26,7 +26,7 @@ Shape: `{ "bugs": [ BugRecord, ... ] }`. The record schema is `schemas/bug-recor
 
 ### The three consumption-bridge fields
 
-The user keeps this ledger so a **later `straightjacket:regression` / `tdd` run can turn a bug into a test without re-deriving it from prose**. Fill these so the bridge is real, not nominal — they map directly onto what `coverage-reviewer` ingests:
+The user keeps this ledger so a **later `straightjacket:tdd` (target/fix-mode) run can turn a bug into a test without re-deriving it from prose**. Fill these so the bridge is real, not nominal — they map directly onto what `coverage-reviewer` ingests:
 
 | BugRecord field | → maps to `WorkUnit` field | what to write |
 |---|---|---|
@@ -40,7 +40,7 @@ If you can only guess, guess and say so in `notes` — a weak seed still beats p
 
 ### Step 1 — Gather the record (fast)
 
-Assemble a `BugRecord` from what you already know. If invoked mid-workflow, you usually have most of it from context (the failing test, the stack trace, the file you were in) — **use that; don't re-investigate**. Set `discovered_during` to the provenance (e.g. `"straightjacket:regression run <run_id>"`, `"manual"`, `"code review"`).
+Assemble a `BugRecord` from what you already know. If invoked mid-workflow, you usually have most of it from context (the failing test, the stack trace, the file you were in) — **use that; don't re-investigate**. Set `discovered_during` to the provenance (e.g. `"straightjacket:tdd run <run_id>"`, `"manual"`, `"code review"`).
 
 Minimum to proceed: `title`, `severity`, `summary`, `expected`, `actual`, plus a best-effort `suspect_files` + `intended_behavior_seed`. If `expected`/`actual` are genuinely unknown, ask **one** tight question rather than guessing the oracle — everything else can be filled best-effort or left empty.
 
@@ -93,7 +93,7 @@ Then give a **one-screen** report and return control to whatever you were doing:
   local:  .straightjacket/bugs.json
   github: https://github.com/owner/repo/issues/42
   jira:   PROJ-123  (https://…/browse/PROJ-123)
-  seed:   parse_header rejects a header > 4 KiB with HeaderTooLong   ← test-context for a future regression run
+  seed:   parse_header rejects a header > 4 KiB with HeaderTooLong   ← test-context for a future tdd fix-mode run
 ```
 
 Omit any destination that was skipped, and say *why* (e.g. "jira: skipped — not authenticated"). If you were invoked mid-task, end by resuming that task.
@@ -153,4 +153,4 @@ Absent config → local-only, infer GitHub repo from cwd, ask for the Jira proje
 ## Relationship to other skills
 
 - **`atlassian:triage-issue`** does heavyweight Jira *duplicate hunting* and interactive triage. `report-bug` is the lightweight fast-capture path — local-first, dedupe is local-only, and it doesn't interrupt a host workflow. Use `triage-issue` when the goal *is* triage; use `report-bug` when the goal is "log it and move on."
-- **`straightjacket:regression` / `straightjacket:tdd`** invoke this skill from their `surfaced_bug` branches when a run finds a real bug outside the current scope, then keep running (the write side — wired today). The records are *structured so* a future regression/tdd run can lift an `open` record into a test work unit via the three bridge fields above; in **target mode**, regression's coverage step optionally seeds from the ledger (see its Phase 2). There is intentionally no automatic ledger-read in diff mode — how a non-diff ledger entry should enter a diff-oriented coverage phase is a deliberate judgment call left to the user.
+- **`straightjacket:tdd`** (and, once it lands, **`triage`**) invoke this skill from their `surfaced_bug` branch when a run finds a real bug outside the current scope, then keep running (the write side). The records are *structured so* a later run can lift an `open` record into a test work unit via the three bridge fields above: in **fix mode**, the `coverage-reviewer` is seeded from the ledger and treats `intended_behavior_seed` as the authoritative contract (see [`docs/STAGES.md`](../../docs/STAGES.md)). The retired `regression` skill's diff mode never auto-read the ledger — that judgment call (how a non-diff entry enters a diff-oriented coverage phase) is left to the user.

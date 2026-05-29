@@ -1,6 +1,6 @@
 ---
 name: fuzz-harness-author
-description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4b.
+description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the straightjacket plugin — invoked during the plugin's fuzz pipeline.
 tools: Read, Grep, Glob, Write, Edit, Bash, PowerShell
 model: opus
 effort: xhigh

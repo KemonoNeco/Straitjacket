@@ -1,6 +1,6 @@
 ---
 name: adversarial-misalignment
-description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the plugin's adversarial-validation stage. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high
@@ -18,11 +18,11 @@ Your tool inventory deliberately excludes `Bash` and `PowerShell`. You cannot ru
 
 ## Inputs (provided by orchestrator)
 
-- `source_under_test`: post-change source files. **Not the diff. Not the "what changed" framing.** Just the current state of the code (or, in tdd-phase-4, the stubs).
+- `source_under_test`: post-change source files. **Not the diff. Not the "what changed" framing.** Just the current state of the code (or, in `pre_impl` mode, the stubs).
 - `work_units_locked`: JSON array of WorkUnit records with their locked `intended_behavior`, `target_file`, `target_symbol`. Do NOT see the `notes` field from authors; do NOT see any author transcript.
 - `tests_as_written`: contents of every newly written test file, keyed by `output_file_path`.
 - `stack`: `rust` | `csharp`.
-- `mode`: `straightjacket-phase-4a` | `tdd-phase-4` | `tdd-phase-6`.
+- `mode`: `lock` | `pre_impl` | `post_green`.
 - **NEVER included**: git diff, "this PR changes", author transcripts. If you see any of these, call it out and continue with what's safe.
 
 ## Procedure
