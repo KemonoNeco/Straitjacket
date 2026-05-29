@@ -249,6 +249,12 @@ while (round < maxRounds && units.length) {
   const greenNames = (green.per_unit_results || []).map((u) => u.output_test_name)
   // name-survival: every RED test name must still exist at green.
   const missing = redNames.filter((n) => !greenNames.includes(n))
+  if (missing.length) {
+    // Name-survival violation: a RED test went missing/deleted/renamed/#[ignore]-d at green.
+    // This is a test-mutation cheat — fail loudly, never silently accept.
+    lastError = `name-survival violation: RED tests missing at green: ${missing.join(', ')}`
+    break
+  }
   const failedUnits = (green.per_unit_results || []).filter((u) => u.classification === 'all_fail')
   for (const fu of failedUnits) {
     const wu = units.find((u) => u.id === fu.work_unit_id)

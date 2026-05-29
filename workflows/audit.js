@@ -110,7 +110,8 @@ if (llmFindings.length) {
       `DEFAULT to refute when you cannot independently confirm the claim by reading the cited source — this audit drops the unconfirmable.`,
       `You see each finding's claim + evidence + source ONLY (not the finder's private reasoning). READ the cited files yourself.`,
       `findings:`, JSON.stringify(claimsOnly, null, 2),
-      `Return ONLY JSON: {"votes":[{"finding_ref":<ref>,"verdict":"refute|survive|uncertain","reason":"..."}], "isolation_check":{...}}.`,
+      `Key each vote by the finding's "title" (add its file:line if titles repeat) as finding_ref — NOT the array index — so audit-synthesis can join your votes to the findings.`,
+      `Return ONLY JSON: {"votes":[{"finding_ref":"<finding title>","verdict":"refute|survive|uncertain","reason":"..."}], "isolation_check":{...}}.`,
     ].join('\n'), { agentType: 'straightjacket:audit-refuter', schema: REFUTER_SCHEMA, phase: 'Refute', label: `refuter:${k + 1}` })))
   refuterVotes = votes.filter(Boolean)
 }

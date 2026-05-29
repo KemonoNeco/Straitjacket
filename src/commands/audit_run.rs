@@ -157,7 +157,17 @@ pub fn run(args: Args) -> anyhow::Result<()> {
     // `AuditTool` is Clone but not Copy; capture what we need by reference/format
     // before moving `args.tool` into `audit_command`.
     let is_clippy = args.tool == AuditTool::ClippyDeadCode;
-    let tool_label = format!("{:?}", args.tool);
+    // Kebab-case wire name — must match the schema + workflow lens names; the Debug repr
+    // (`ClippyDeadCode`) would break corroboration/joining downstream.
+    let tool_label = match &args.tool {
+        AuditTool::ClippyDeadCode => "clippy-dead-code",
+        AuditTool::CargoAudit => "cargo-audit",
+        AuditTool::CargoDeny => "cargo-deny",
+        AuditTool::CargoGeiger => "cargo-geiger",
+        AuditTool::CargoUdeps => "cargo-udeps",
+        AuditTool::DotnetVulnerable => "dotnet-vulnerable",
+    }
+    .to_string();
 
     let result = match audit_command(args.tool, args.stack) {
         // Tool does not apply to this stack: nothing was scanned.
