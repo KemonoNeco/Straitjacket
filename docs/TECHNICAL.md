@@ -42,7 +42,9 @@ regression-tests-plugin/
 │   └── fuzz-runner.md
 ├── hooks/                  (4) Three Claude Code hook bindings
 │   └── hooks.json
-├── bin/straightjacket.exe (5a) Pre-built helper binary (committed, ~3MB)
+├── bin/straightjacket      (5a) sh launcher → straightjacket-<triple>
+│   ├── straightjacket.cmd        Windows launcher (PATHEXT-resolved)
+│   └── straightjacket-<triple>[.exe]  Per-platform binaries (committed, ~3MB each)
 ├── src/                    (5b) Helper-binary source (10 subcommands)
 │   ├── main.rs
 │   ├── lib.rs
@@ -72,7 +74,7 @@ flowchart TB
 
 | Layer | Lives in | Role |
 |---|---|---|
-| 1 - Rust CLI | `bin/straightjacket.exe` | 10 subcommands |
+| 1 - Rust CLI | `bin/straightjacket` (launcher → `straightjacket-<triple>`) | 10 subcommands |
 | 2 - Shared infra | `src/common/` | walk, subprocess, json_io |
 | 3 - Specialist agents | `agents/*.md` | 10 agents |
 | 4 - Skill orchestrator | `skills/regression/SKILL.md` | main Claude session |
@@ -272,8 +274,8 @@ WorkUnit
    * A `#[cfg(test)] mod tests` block.
 2. Add `pub mod <my_cmd>;` to `src/commands/mod.rs`.
 3. Add the variant to `Commands` in `src/main.rs` and wire it into the `match cli.command`.
-4. Rebuild: `cargo build --release && cp target/release/straightjacket.exe bin/straightjacket.exe`.
-5. Commit the new `bin/straightjacket.exe`.
+4. Rebuild your host's binary for local testing: `cargo build --release && cp target/release/straightjacket.exe bin/straightjacket-x86_64-pc-windows-msvc.exe` (substitute your target triple / drop `.exe` on Unix). Refresh all platforms via the `build-binaries` workflow.
+5. Commit the refreshed `bin/straightjacket-<triple>[.exe]` binaries (CI re-commits the full set on dispatch/tag).
 
 ### Adding a new specialist agent
 

@@ -1,0 +1,133 @@
+name: build-binaries
+
+# Cross-compiles the `straightjacket` helper binary for every platform the
+# launcher shims (bin/straightjacket, bin/straightjacket.cmd) dispatch to, then
+# commits the refreshed binaries back into bin/ so installed plugins ship with a
+# native binary for the host (consumers have no Rust toolchain).
+#
+# Triggers:
+#   - workflow_dispatch : manual refresh of the committed binaries
+#   - push tags v*      : release build (commit to main + GitHub Release)
+#   - pull_request      : build + test gate only (no commit)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/build-binaries.yml"
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Test
+        run: cargo test --lib --target ${{ matrix.target }}
+
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact (unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/straightjacket" "dist/straightjacket-${{ matrix.target }}"
+          chmod +x "dist/straightjacket-${{ matrix.target }}"
+
+      - name: Stage artifact (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/straightjacket.exe" "dist/straightjacket-${{ matrix.target }}.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: straightjacket-${{ matrix.target }}
+          path: dist/*
+          # upload-artifact drops the unix executable bit; the sync/release
+          # jobs re-apply chmod +x before committing/packaging.
+
+  sync-bin:
+    name: commit binaries to bin/
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          pattern: straightjacket-*
+          merge-multiple: true
+
+      - name: Place binaries into bin/
+        run: |
+          cp incoming/* bin/
+          chmod +x bin/straightjacket-*-unknown-linux-gnu bin/straightjacket-*-apple-darwin
+
+      - name: Commit refreshed binaries
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add bin/
+          if git diff --cached --quiet; then
+            echo "No binary changes to commit."
+            exit 0
+          fi
+          git commit -m "ci: rebuild cross-platform straightjacket binaries [skip ci]"
+          git push origin main
+
+  release:
+    name: publish release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+          pattern: straightjacket-*
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" incoming/* --repo "${{ github.repository }}" --generate-notes

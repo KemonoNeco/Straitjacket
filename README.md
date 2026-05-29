@@ -84,15 +84,19 @@ straightjacket preflight       (combined: detect-stack + baseline-check + lint-c
 straightjacket hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
 ```
 
-The pre-built binary is committed at `bin/straightjacket.exe` (~3 MB Windows x86_64), so downstream consumers do **not** need a Rust toolchain to use the plugin.
+Pre-built per-platform binaries are committed under `bin/` (named by Rust target triple, ~3 MB each), so downstream consumers do **not** need a Rust toolchain. You always invoke `straightjacket`; two launcher shims dispatch to the right binary for the host:
+
+- `bin/straightjacket` — POSIX `sh` launcher (Linux/macOS, any arch)
+- `bin/straightjacket.cmd` — Windows launcher
+- `bin/straightjacket-<triple>[.exe]` — the actual binaries the launchers pick from
 
 ## Status
 
-Currently **Windows x86_64 only**. Cross-platform binaries (Linux, macOS) via a GitHub Actions matrix is future work. The Rust source itself has no platform-specific business logic outside `src/common/subprocess.rs`; the `kill_process_tree` POSIX path is stubbed and tracked.
+**Cross-platform.** `.github/workflows/build-binaries.yml` cross-compiles the binary on a native runner per target — `x86_64`/`aarch64` Linux, `x86_64`/`aarch64` macOS, and `x86_64` Windows — and commits the refreshed binaries back into `bin/` on a manual dispatch or a `v*` release tag. Windows-on-ARM uses the x64 build under emulation. The only platform-specific business logic is in `src/common/subprocess.rs`; the `kill_process_tree` POSIX path is stubbed and tracked.
 
 ## Prerequisites
 
-**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/straightjacket.exe` is the only requirement - no toolchain needed.
+**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/` binaries are the only requirement - no toolchain needed.
 
 **For full multi-phase regression testing on a Rust project under test**:
 
@@ -140,12 +144,15 @@ Then invoke `/straightjacket:regression` in any Rust or C# project's git working
 
 ## Build from source
 
+The committed binaries are produced by CI (`.github/workflows/build-binaries.yml`) — to refresh them across all platforms, trigger that workflow (`workflow_dispatch`) or push a `v*` tag. For a local single-target build:
+
 ```bash
 cargo build --release
-cp target/release/straightjacket.exe bin/straightjacket.exe
+# name the output by your host triple so the launcher finds it, e.g. Windows x64:
+cp target/release/straightjacket.exe bin/straightjacket-x86_64-pc-windows-msvc.exe
 ```
 
-The pre-built binary at `bin/straightjacket.exe` is committed to the repo so end users don't need a Rust toolchain. See [CLAUDE.md](CLAUDE.md) for the full toolchain bootstrap (vcvars sourcing, MSBuild env vars, etc.).
+The per-platform binaries under `bin/` are committed so end users don't need a Rust toolchain. See [CLAUDE.md](CLAUDE.md) for the full toolchain bootstrap (vcvars sourcing, MSBuild env vars, etc.) and the launcher/CI details.
 
 ## License
 
