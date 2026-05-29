@@ -23,8 +23,11 @@ case "$(uname -m)" in
 esac
 
 bin="$dir/straightjacket-$cpu-$vendor_os"
-if [ ! -x "$bin" ]; then
+if [ ! -e "$bin" ]; then
   echo "straightjacket: no prebuilt binary for $cpu-$vendor_os at $bin" >&2
+  exit 127
+elif [ ! -x "$bin" ]; then
+  echo "straightjacket: prebuilt binary at $bin is not executable (try: chmod +x $bin)" >&2
   exit 127
 fi
 
