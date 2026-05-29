@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A Claude Code plugin (not just a Rust crate). It ships **one skill**, **ten specialist agents**, **three hooks**, and a **Rust CLI binary** that together implement the `regression-tests` multi-agent test workflow (lock current behavior). The Rust crate at the repo root is the *helper binary* for the plugin — not the plugin's primary output. The primary output is the skill + agents + hooks that orchestrate Claude Code subagents.
+A Claude Code plugin (not just a Rust crate). It ships **two skills** (`regression` — lock current behavior; `tdd` — drive new features test-first), **eleven specialist agents** plus `implementation-author`, **three hooks**, **workflow stage scripts** (`workflows/*.js`), and a **Rust CLI binary** (`straightjacket`) that together implement the multi-agent test-engineering workflow. The deterministic fan-out phases run as **dynamic-Workflow stages** when the `Workflow` tool is available, else as direct `Agent` dispatch. The Rust crate at the repo root is the *helper binary* (deterministic helpers + hook executor + `workflow-script` emitter) — not the plugin's primary output. The primary output is the skills + agents + hooks + workflow scripts that orchestrate Claude Code subagents.
 
-> A second skill (`tdd`) and an `implementation-author` agent that drove new feature development with failing-tests-first were previously shipped here. They have been temporarily removed and will be reimplemented later. The Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation — do not delete them.
+> The `tdd` skill + `implementation-author` agent (failing-tests-first new-feature development) were removed in `477372c` and **reimplemented workflow-first** this session (`skills/tdd/SKILL.md`, `agents/implementation-author.md`). The `run-new-tests` name-survival, `target_stub_path`, and the `implementation-author` arm in `decide_post_agent` back them.
 
 Read `README.md` for end-user info, and `docs/TECHNICAL.md` for the architecture deep-dive (phase flowcharts, agent dispatch graph, file lifecycle, extension recipes). The plan that drove the build lives at `~/.claude/plans/do-we-need-a-twinkly-bonbon.md` (476 lines, source of truth for design decisions).
 
@@ -19,24 +19,27 @@ Read `README.md` for end-user info, and `docs/TECHNICAL.md` for the architecture
 - `link: extra operand` - Git Bash's `link.exe` shadows the MSVC linker on PATH
 - `LNK1181: cannot open kernel32.lib` - Windows SDK lib paths absent from the env
 
-Source the environment at the top of every Cargo invocation:
+**Preferred — git bash.** The repo ships **`scripts\cargo-msvc.cmd`**, which `vswhere`-resolves `vcvars64.bat` (so it survives VS edition/version upgrades — **VS18 / 2026** today, *not* the stale hardcoded 2022 path) and runs cargo with the MSVC env. From git bash:
+
+```bash
+cmd //c scripts\cargo-msvc.cmd test --lib
+cmd //c scripts\cargo-msvc.cmd clippy --all-targets -- -D warnings
+# keep any `| tail` on the BASH side — cmd has no `tail`
+```
+
+> Claude note: the wrapper dodges two load-bearing Windows gotchas. (1) Git bash's `/usr/bin/link.exe` shadows MSVC's linker (`link: extra operand`); running cargo *inside* `cmd` after vcvars uses cmd's PATH, where MSVC's link wins. (2) A space-containing `"C:\…\vcvars64.bat"` placed directly on a `cmd //c '…'` arg line gets MSYS-escaped to `\"C:\…\"` and cmd can't parse it — keeping the quoted path inside the `.cmd` avoids it. vcvars is located via `vswhere`, replacing the previously-hardcoded `…\2022\Community\…` path that no longer exists on this machine.
+
+<details><summary>PowerShell alternative (vswhere-resolved)</summary>
 
 ```powershell
-# Installer dir on PATH BEFORE vcvars runs - vcvars64.bat shells out to vswhere.exe
-$installerDir = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer'
-$env:PATH = "$installerDir;$env:PATH"
-
-# Source vcvars64.bat into the current PowerShell session
-$vcvars = 'C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat'
+$vswhere = 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe'
+$vcvars  = & $vswhere -latest -prerelease -find 'VC\Auxiliary\Build\vcvars64.bat'
 cmd.exe /c "`"$vcvars`" >NUL 2>&1 && set" | ForEach-Object {
     if ($_ -match '^([^=]+)=(.*)$') { Set-Item -Path "env:$($matches[1])" -Value $matches[2] }
 }
-
-# Prevent MSBuild node-reuse from holding files open across builds
 $env:MSBUILDDISABLENODEREUSE = '1'
 ```
-
-> Claude note: The Installer-dir-before-vcvars ordering is load-bearing. `vcvars64.bat` calls `vswhere.exe` internally to locate the active VS install; if `vswhere` isn't on PATH first, vcvars silently picks the wrong toolchain (or none) and the resulting env is incomplete.
+</details>
 
 ### Standard commands
 
@@ -44,7 +47,7 @@ After bootstrap:
 
 - `cargo check --all-targets` - Fast type-check, no codegen
 - `cargo clippy --all-targets -- -D warnings` - Lint gate, must be clean
-- `cargo test --lib` - Runs the 145 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
+- `cargo test --lib` - Runs the 187 tests embedded in each module's `#[cfg(test)] mod tests`; ~3 seconds after first build
 - `cargo test --lib commands::detect_stack` - Single-module run by qualified path
 
 > Claude note: Cargo `test` takes exactly one filter positional - you can't pass two module paths in the same invocation. To run two modules, run two commands.
@@ -53,10 +56,10 @@ After bootstrap:
 
 ```bash
 cargo build --release
-cp target/release/regression-tests.exe bin/regression-tests.exe
+cp target/release/straightjacket.exe bin/straightjacket.exe
 ```
 
-- `bin/regression-tests.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
+- `bin/straightjacket.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
 - `target/` is gitignored
 
 ### LSP integration
@@ -69,7 +72,7 @@ rustup component add rust-analyzer
 
 > Claude note: The rustup proxy at `~/.cargo/bin/rust-analyzer.exe` exits with code 1 when the component isn't installed - this surfaces as a Claude plugin LSP crash rather than a missing-binary error, so it's easy to misdiagnose.
 
-## Optional dev tooling for dogfooding regression-tests on this crate
+## Optional dev tooling for dogfooding straightjacket on this crate
 
 The skill in this plugin shells out to mutation/fuzz/coverage tools when present and degrades gracefully when absent (see `Phase 1 step 3` in SKILL.md). For an end-to-end run against this crate's own Rust source, install:
 
@@ -83,19 +86,21 @@ C# equivalents (for dogfooding the C# code path of this plugin, not the plugin i
 
 ## Architecture: where the work lives
 
-Five layers, each with a different cardinal rule:
+Six layers, each with a different cardinal rule:
 
-1. **`bin/regression-tests.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
+1. **`bin/straightjacket.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
 
-2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline.
+2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline. **`cargo_target.rs`** holds `resolve_cargo_target` (pure manifest-paths → `CargoTarget`: a root-level `Cargo.toml` → run with `--workspace`; a single nested crate → run from that crate's dir *without* `--workspace`; multiple nested with no root → `Ambiguous`, never a silent pick) and `cargo_invocation` (maps a `CargoTarget` + base cargo args → cwd + argv, inserting `--workspace` only for a real workspace). `baseline_check`/`lint_check`/`run_new_tests` use them to run cargo from the correct directory on nested-crate layouts instead of a blind `--workspace` from `repo_root`.
 
-3. **`agents/*.md`** — 10 specialist subagent definitions. Each has YAML frontmatter (`name`, `description`, `tools`, `model`, `effort`) and a body that's the agent's role + procedure + output-contract. Tool restrictions are **load-bearing isolation guarantees**, not advisory: `adversarial-*` agents have no `Bash`/`PowerShell` so they cannot `git diff` even if their prompt tries to make them. The plugin's `PreToolUse` hook scans adversarial-agent prompts as defense-in-depth. When editing an agent, preserve the tool list unless you intend to change its isolation contract.
+3. **`agents/*.md`** — 11 specialist subagent definitions + `implementation-author` (tdd's green phase). Each has YAML frontmatter (`name`, `description`, `tools`, `model`, `effort`) and a body that's the agent's role + procedure + output-contract. Tool restrictions are **load-bearing isolation guarantees**, not advisory: `adversarial-*` agents have no `Bash`/`PowerShell` so they cannot `git diff` even if their prompt tries to make them — and spike `wf_060d27f3` confirmed this restriction also holds for **workflow-spawned** agents, so diff-isolation survives the workflow path. The `PreToolUse` hook scans adversarial-agent prompts as defense-in-depth (Agent path only). When editing an agent, preserve the tool list unless you intend to change its isolation contract.
 
-4. **`skills/regression-tests/SKILL.md`** — orchestrator playbook. The main Claude session executes every phase; specialists are dispatched via `Agent` tool calls. **Cardinal Rule 0 (from SKILL.md): you never write test code yourself** — that's the multi-agent collapse failure mode the skill exists to prevent. If you find yourself reaching for Write/Edit on a `_test.rs` or `Tests.cs`, stop and dispatch the appropriate `unit-test-author` / `integration-test-author`. The only files the orchestrator writes are `work-units.json`, `tooling.json`, scaffolded test projects, and the final summary.
+4. **`skills/regression/SKILL.md` + `skills/tdd/SKILL.md`** — the two orchestrator skills (`straightjacket:regression` locks behavior; `straightjacket:tdd` drives test-first). Both are **workflow-first thin launchers**: the main session owns the checkpoints + the single-writer `work-units.json` merge, and delegates each deterministic fan-out phase to a **dynamic-Workflow stage** (`straightjacket workflow-script <fanout|adversarial>` → the `Workflow` tool) when available, else direct `Agent` dispatch. **Cardinal Rule 0: you never write test/impl code yourself** — that's the multi-agent collapse failure mode the skills exist to prevent; dispatch the `*-author` specialists. The only files the orchestrator writes are `work-units.json`, `tooling.json`, scaffolded test projects, and the final summary.
 
-5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `regression-tests preflight` on skill invocation; `PreToolUse Agent` runs `regression-tests hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `regression-tests hook post-agent` (dispatches `verify-new-tests-compile` after test authors). `verify-no-test-mutation` is deliberately NOT a per-author hook — it produced false positives on Rust source files with inline `#[cfg(test)] mod tests`; the orchestrator runs it once at end-of-phase as an audit and relies on `adversarial-vacuousness` / `adversarial-misalignment` specialists for primary cheat detection. Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`.
+5. **`hooks/hooks.json`** — three hook events: `UserPromptExpansion` matcher fires `straightjacket preflight` on skill invocation; `PreToolUse Agent` runs `straightjacket hook pre-adversarial` (scans prompts for `--- a/`, `+++ b/`, `git diff`); `PostToolUse Agent` runs `straightjacket hook post-agent` (dispatches `verify-new-tests-compile` after test authors). `verify-no-test-mutation` is deliberately NOT a per-author hook — it produced false positives on Rust source files with inline `#[cfg(test)] mod tests`; the orchestrator runs it once at end-of-phase as an audit and relies on `adversarial-vacuousness` / `adversarial-misalignment` specialists for primary cheat detection. Hook event types and JSON shapes live in `src/commands/hook.rs::HookEvent` / `HookDecision`. **The `Agent` hooks do NOT fire for workflow-spawned agents** — in the workflow path, diff-isolation rests on the agents' tool restrictions and the orchestrator runs the verify/audit steps itself; the `UserPromptExpansion` preflight is unaffected (it fires on skill invocation in the main session).
 
-The Rust binary is also the *hook executor* — `regression-tests hook <event>` reads stdin JSON, decides via pure functions in `hook.rs`, and emits the Claude-expected response shape. Decision logic is unit-tested; the hook shell is thin.
+6. **`workflows/*.js`** — shipped dynamic-Workflow stage scripts (`adversarial`, `fanout`), `include_str!`'d into the binary and emitted by `straightjacket workflow-script <stage>`. A SKILL reads one (via the CLI), fills `args` bindings (work units, stack, mode — **never the diff**), and runs it through the `Workflow` tool; the script fans out our custom agents (`parallel()` + `agent({agentType})`) and returns a compact structured result the main session merges. The scripts hold the *deterministic choreography* (parallel / caps / synthesis / iterate); the SKILL holds the prompts + judgment + checkpoints. Workflows are NOT a plugin-discovered component, so the **binary-emit** path is how they reach an installed plugin (vs. `.claude/workflows/`, which wouldn't ship).
+
+The Rust binary is also the *hook executor* — `straightjacket hook <event>` reads stdin JSON, decides via pure functions in `hook.rs`, and emits the Claude-expected response shape. Decision logic is unit-tested; the hook shell is thin.
 
 ## Plugin packaging (gotchas worth recording)
 
@@ -109,10 +114,11 @@ The Rust binary is also the *hook executor* — `regression-tests hook <event>` 
 - **`cargo test --lib` parallelism + env-mutating tests**: cargo runs tests in parallel threads of the same process. Tests that mutate `std::env` (e.g., setting a sentinel value in the parent) will race against any other test that reads the same variable. The current `sets_msbuild_env_var_on_child_only_not_parent` test works only because no test mutates `MSBUILDDISABLENODEREUSE` directly — a stronger sentinel-based variant was attempted and reverted (commit history). If you need to add env-touching tests, add `serial_test` as a dev-dependency and annotate.
 - **`subprocess.rs::tests::timeout_kills_entire_process_tree`** is Windows-gated (`#[cfg(windows)]`) and uses a unique `-w` ping tag (`88_000_000 + (pid % 100_000)`) to detect orphans via `Get-CimInstance Win32_Process`. The Linux/macOS implementation of `kill_process_tree` is stubbed; add an equivalent (`kill -- -$pgid` or similar) when cross-platform work begins.
 - **Schema-shape tests** like `stack_serializes_as_lowercase_string` guard the JSON output contract that the SKILL.md orchestrator consumes. Don't relax those — the orchestrator parses by exact field names and lowercase enum values (`"rust" | "csharp" | "both" | "none"`, `"unit" | "integration"`, etc.).
+- **No-silent-green guarantees (Finding 2)**: `verify_no_test_mutation` exposes `no_files_checked` (true when 0 files were snapshotted) and `run_new_tests` exposes `nothing_to_run` (true when 0 units collected) — both **orthogonal to `clean`/success** so the orchestrator branches on "checked nothing" loudly instead of mistaking a 0-check for a pass. `run_new_tests::name_survival(expected_red_names, green_statuses)` is the behavioral immutability backstop: a previously-RED test that goes `missing` (Unknown/absent → deleted, renamed, or `#[ignore]`-d) fails the survival gate (`ok == missing.is_empty() && regressed.is_empty() && !nothing_to_verify`; empty expected set → `nothing_to_verify` + not ok). `collect_units_by_name` selects units by name **ignoring the manually-flipped `status`** (so the gate can't no-op) and accepts the `{"work_units":[...]}` wrapper. Don't reintroduce a silent 0-check path.
 
 ## Git workflow notes
 
-- `bin/regression-tests.exe` is committed (~3MB Windows binary). Don't gitignore it.
+- `bin/straightjacket.exe` is committed (~3MB Windows binary). Don't gitignore it.
 - `target/`, `.claude-regression/` (per-run state from the skills themselves), and `2026-*-*.txt` (session transcript files) are gitignored.
 - The repo uses `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` in commits where Claude Code contributed.
 

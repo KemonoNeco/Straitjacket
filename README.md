@@ -1,52 +1,53 @@
-# regression-tests plugin
+# straightjacket plugin
 
-A Claude Code plugin that ships a multi-agent test workflow. It hardens test suites against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing.
+A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Two skills over one engine: **`regression`** locks current behavior, and **`tdd`** drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. It hardens tests against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch).
 
-> A TDD skill that drove new feature development with failing-tests-first was previously shipped alongside this one. It has been temporarily removed and will be reimplemented later.
+> Both skills share the same eleven specialist agents + the `straightjacket` Rust CLI; the `tdd` skill adds `implementation-author` for the green phase.
 
 * **Looking for usage?** Jump to [Quickstart](#quickstart).
 * **Looking for design?** Read [docs/TECHNICAL.md](docs/TECHNICAL.md) for the architecture deep-dive.
 * **Contributing to the plugin?** Read [CLAUDE.md](CLAUDE.md) for the load-bearing invariants.
 
-## Skill
+## Skills
 
 | Slash command | Purpose |
 |---|---|
-| `/regression-tests:regression-tests` | Generate regression tests for recent changes or a target module. Locks current behavior. |
+| `/straightjacket:regression` | Generate regression tests for recent changes or a target module. **Locks current behavior.** |
+| `/straightjacket:tdd` | Drive a new feature test-first from a spec: red → adversarial-on-red → green → mutation, under a savepoint discipline. |
 
-Pipeline shape: **coverage planning → parallel test authoring → adversarial team review → mutation testing → optional fuzzing**.
+Shared pipeline shape: **coverage planning → parallel authoring → adversarial team review (+ synthesis) → mutation testing → optional fuzzing**, run as dynamic-Workflow stages when the `Workflow` tool is available, else direct `Agent` dispatch.
 
 ## Quickstart
 
 ```bash
 # 1. Install (via Claude plugin marketplace)
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
-claude plugin install regression-tests@regression-tests
+claude plugin install straightjacket@straightjacket
 
 # 2. Verify install - should report skills/agents/hooks counts
-claude plugin details regression-tests@regression-tests
+claude plugin details straightjacket@straightjacket
 
 # 3. Run inside any Rust or C# repo with a clean baseline
 cd ~/path/to/my-rust-project
 claude
-> /regression-tests:regression-tests          # diff mode (vs. origin/main)
-> /regression-tests:regression-tests src/parser.rs   # target mode
+> /straightjacket:regression          # diff mode (vs. origin/main)
+> /straightjacket:regression src/parser.rs   # target mode
 ```
 
 The skill writes tests directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run).
 
 ## Agents
 
-Ten specialist agents make up the workflow:
+Eleven specialist agents (plus `implementation-author` for the tdd green phase) make up the workflow:
 
 | Agent | Model | Role |
 |---|---|---|
 | `coverage-reviewer` | opus | Synthesis: diff/target → locked work-unit contracts |
 | `unit-test-author` | sonnet | Parallel team, unit-level test code |
 | `integration-test-author` | opus | Reasoning-heavy boundary tests |
-| `adversarial-vacuousness` | sonnet | Specialist: vacuous tests + test-mutation patterns |
-| `adversarial-happy-path` | sonnet | Specialist: happy-path bias + edge cases |
-| `adversarial-misalignment` | sonnet | Specialist: test ↔ contract alignment |
+| `adversarial-vacuousness` | opus | Specialist: vacuous tests + test-mutation patterns |
+| `adversarial-happy-path` | opus | Specialist: happy-path bias + edge cases |
+| `adversarial-misalignment` | opus | Specialist: test ↔ contract alignment |
 | `adversarial-synthesis` | opus | Synthesis over the three specialists' findings |
 | `mutation-runner` | haiku | Mechanical: cargo-mutants / dotnet-stryker |
 | `fuzz-harness-author` | opus | Reasoning-heavy fuzz harness design |
@@ -58,31 +59,31 @@ See [docs/TECHNICAL.md#agent-dispatch-graph](docs/TECHNICAL.md#agent-dispatch-gr
 
 `hooks/hooks.json` enforces invariants automatically:
 
-* **`UserPromptExpansion`** on the plugin's skill names → runs `regression-tests preflight` (detect-stack + baseline-check + lint-check). Blocks the skill if the baseline is red.
+* **`UserPromptExpansion`** on the plugin's skill names → runs `straightjacket preflight` (detect-stack + baseline-check + lint-check). Blocks the skill if the baseline is red.
 * **`PreToolUse`** on the `Agent` tool → scans prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before adversarial specialists spawn (defense-in-depth on top of their tool restrictions).
 * **`PostToolUse`** on the `Agent` tool → auto-runs `verify-new-tests-compile` after each test-author returns. Blocks with diagnostics for retry.
 
 `verify-no-test-mutation` is *not* a per-author hook (see [TECHNICAL.md#hook-lifecycle](docs/TECHNICAL.md#hook-lifecycle) for the rationale). The orchestrator runs it once at end-of-phase as an audit; the adversarial-vacuousness and adversarial-misalignment specialists provide primary cheat detection.
 
-## Rust binary (`bin/regression-tests`)
+## Rust binary (`bin/straightjacket`)
 
 A single CLI exposing the deterministic helpers:
 
 ```
-regression-tests detect-stack
-regression-tests baseline-check  --repo-root <p> --stack <s> --log-dir <d>
-regression-tests lint-check      --repo-root <p> --stack <s> --log-dir <d>
-regression-tests snapshot-tests  --repo-root <p> --out-file <p>
-regression-tests verify-no-test-mutation --repo-root <p> --snapshot-file <p>
-regression-tests verify-new-tests-compile --repo-root <p> --work-units <p> --stack <s>
-regression-tests fuzz-setup      --repo-root <p> --stack <s>
-regression-tests reproducer-to-test --repro <p> --target <name> --stack <s> --work-units <p>
-regression-tests run-new-tests   --repo-root <p> --work-units <p> --stack <s> [--expect=fail]
-regression-tests preflight       (combined: detect-stack + baseline-check + lint-check)
-regression-tests hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
+straightjacket detect-stack
+straightjacket baseline-check  --repo-root <p> --stack <s> --log-dir <d>
+straightjacket lint-check      --repo-root <p> --stack <s> --log-dir <d>
+straightjacket snapshot-tests  --repo-root <p> --out-file <p>
+straightjacket verify-no-test-mutation --repo-root <p> --snapshot-file <p>
+straightjacket verify-new-tests-compile --repo-root <p> --work-units <p> --stack <s>
+straightjacket fuzz-setup      --repo-root <p> --stack <s>
+straightjacket reproducer-to-test --repro <p> --target <name> --stack <s> --work-units <p>
+straightjacket run-new-tests   --repo-root <p> --work-units <p> --stack <s> [--expect=fail]
+straightjacket preflight       (combined: detect-stack + baseline-check + lint-check)
+straightjacket hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
 ```
 
-The pre-built binary is committed at `bin/regression-tests.exe` (~3 MB Windows x86_64), so downstream consumers do **not** need a Rust toolchain to use the plugin.
+The pre-built binary is committed at `bin/straightjacket.exe` (~3 MB Windows x86_64), so downstream consumers do **not** need a Rust toolchain to use the plugin.
 
 ## Status
 
@@ -90,7 +91,7 @@ Currently **Windows x86_64 only**. Cross-platform binaries (Linux, macOS) via a 
 
 ## Prerequisites
 
-**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/regression-tests.exe` is the only requirement - no toolchain needed.
+**For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/straightjacket.exe` is the only requirement - no toolchain needed.
 
 **For full multi-phase regression testing on a Rust project under test**:
 
@@ -125,7 +126,7 @@ The skills shell out to these tools when present and degrade gracefully when abs
 
 ```bash
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
-claude plugin install regression-tests@regression-tests
+claude plugin install straightjacket@straightjacket
 ```
 
 **Local dev** - point Claude Code at a checkout:
@@ -134,16 +135,16 @@ claude plugin install regression-tests@regression-tests
 claude --plugin-dir ~/Code/regression-tests-plugin
 ```
 
-Then invoke `/regression-tests:regression-tests` in any Rust or C# project's git working tree.
+Then invoke `/straightjacket:regression` in any Rust or C# project's git working tree.
 
 ## Build from source
 
 ```bash
 cargo build --release
-cp target/release/regression-tests.exe bin/regression-tests.exe
+cp target/release/straightjacket.exe bin/straightjacket.exe
 ```
 
-The pre-built binary at `bin/regression-tests.exe` is committed to the repo so end users don't need a Rust toolchain. See [CLAUDE.md](CLAUDE.md) for the full toolchain bootstrap (vcvars sourcing, MSBuild env vars, etc.).
+The pre-built binary at `bin/straightjacket.exe` is committed to the repo so end users don't need a Rust toolchain. See [CLAUDE.md](CLAUDE.md) for the full toolchain bootstrap (vcvars sourcing, MSBuild env vars, etc.).
 
 ## License
 

@@ -1,3 +1,5 @@
+use crate::commands::detect_stack::detect_stack;
+use crate::common::cargo_target::{cargo_invocation, resolve_cargo_target, CargoInvocation};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
 use anyhow::Context;
@@ -59,22 +61,6 @@ fn append_section(log_path: &Path, header: &str, body: &str) -> anyhow::Result<(
     Ok(())
 }
 
-fn run_cargo_test(repo_root: &Path, log_path: &Path) -> anyhow::Result<RunResult> {
-    let r = run_with_timeout(
-        "cargo",
-        &["test", "--workspace", "--no-fail-fast"],
-        repo_root,
-        Duration::from_secs(900),
-    )
-    .context("invoke cargo test")?;
-    append_section(
-        log_path,
-        &format!("cargo test --workspace (exit {})", r.exit_code),
-        &r.combined_output,
-    )?;
-    Ok(r)
-}
-
 fn run_dotnet_test(repo_root: &Path, log_path: &Path) -> anyhow::Result<RunResult> {
     let r = run_with_timeout(
         "dotnet",
@@ -108,16 +94,43 @@ pub fn baseline_check(
     let mut all_passed = true;
 
     if matches!(stack, Stack::Rust | Stack::Both) {
-        let r = run_cargo_test(repo_root, &log_path)?;
-        if r.exit_code != 0 {
-            all_passed = false;
-            let parsed = parse_rust_failing_tests(&r.combined_output);
-            if parsed.is_empty() {
-                failures.push(format!("rust:cargo-test-failed-exit-{}", r.exit_code));
-            } else {
-                for t in parsed {
-                    failures.push(format!("rust:{}", t));
+        let manifests = detect_stack(repo_root)?.rust_manifests;
+        let target = resolve_cargo_target(&manifests, repo_root);
+        match cargo_invocation(&target, &["test", "--no-fail-fast"]) {
+            CargoInvocation::Run { cwd, args } => {
+                let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                let r = run_with_timeout("cargo", &argv, &cwd, Duration::from_secs(900))
+                    .context("invoke cargo test")?;
+                append_section(
+                    &log_path,
+                    &format!("cargo {} (exit {})", args.join(" "), r.exit_code),
+                    &r.combined_output,
+                )?;
+                if r.exit_code != 0 {
+                    all_passed = false;
+                    let parsed = parse_rust_failing_tests(&r.combined_output);
+                    if parsed.is_empty() {
+                        failures.push(format!("rust:cargo-test-failed-exit-{}", r.exit_code));
+                    } else {
+                        for t in parsed {
+                            failures.push(format!("rust:{}", t));
+                        }
+                    }
                 }
+            }
+            CargoInvocation::Skip => {
+                // No Rust target — skip the cargo arm without recording a failure.
+            }
+            CargoInvocation::Ambiguous { candidates } => {
+                all_passed = false;
+                let joined = candidates
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let marker = format!("rust:ambiguous-cargo-target: {}", joined);
+                append_section(&log_path, "cargo target resolution", &marker)?;
+                failures.push(marker);
             }
         }
     }

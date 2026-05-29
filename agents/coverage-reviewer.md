@@ -1,6 +1,6 @@
 ---
 name: coverage-reviewer
-description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the regression-tests plugin — invoked by the regression-tests skill's main session during Phase 2.
+description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the straightjacket plugin — invoked by the regression skill's main session during Phase 2.
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh
@@ -15,8 +15,8 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
 ## Inputs (provided by orchestrator)
 
 - `mode`: `diff` | `target` | `spec`.
-- In `diff` mode (regression-tests): full git diff text and the list of changed files (paths and contents).
-- In `target` mode (regression-tests): resolved paths/symbols plus contents of any `CLAUDE.md` files in or above those paths, plus contents of nearby existing test files (for convention reference).
+- In `diff` mode (straightjacket): full git diff text and the list of changed files (paths and contents).
+- In `target` mode (straightjacket): resolved paths/symbols plus contents of any `CLAUDE.md` files in or above those paths, plus contents of nearby existing test files (for convention reference).
 - In `spec` mode (tdd): the user's spec text inline, plus contents of any `CLAUDE.md` files at the target paths. No existing source-under-test exists for the new behaviors — you are decomposing a specification into work units that will drive both test authoring and stub generation.
 - `stack`: `rust` | `csharp` | `both`.
 - `run_id`: run identifier.
@@ -28,7 +28,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
 
 1. **Read the source under test (or the spec).** For each changed/targeted file or for each behavior the spec describes, identify public functions, methods, and types. For each, mentally enumerate:
    - **Happy path**: typical input → typical output.
-   - **Edge cases**: empty/null/zero, max/min boundaries, single element, exactly one less / one more than a threshold.
+   - **Edge cases**: empty/null/zero, max/min boundaries, single element, exactly one less / one more than a threshold. For any branch whose outcome depends on a **count or collection size**, enumerate each boundary as its own work unit — `0`, **exactly `1`**, and `2+`. A `0`-and-`2+` pair silently misses an off-by-one that only the exactly-`1` case catches (e.g. a "root manifest wins" rule tested at 0 and 2 nested members but never at 1).
    - **Error states**: malformed input, out-of-range values, missing required fields, type mismatches.
    - **Concurrency hazards** (if relevant): re-entrance, shared mutable state, ordering.
    - **Documented invariants**: assertions in doc comments, README, CLAUDE.md, or the spec text.
@@ -54,7 +54,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
    - For additions to existing files, the existing file path becomes `target_stub_path`.
    - The stub's signature must match what the test will reference. The stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#) — the test author writes the stub alongside the test.
    - Multiple work units MAY share a `target_stub_path` (multiple stubs in one file). Be explicit so author teams don't race on the same file.
-   - In `diff` / `target` mode (regression-tests), leave `target_stub_path` as `null` — no stubs are needed because the source already exists.
+   - In `diff` / `target` mode (straightjacket), leave `target_stub_path` as `null` — no stubs are needed because the source already exists.
 
 6. **Write `intended_behavior` with surgical precision.** This string is the alignment anchor for the adversarial specialists. It must be:
    - **A behavior statement, not an implementation statement.** "Returns Err(Truncated) when input is shorter than 4 bytes" — not "checks `if input.len() < 4`".
@@ -87,4 +87,6 @@ Return ONLY valid JSON matching this shape. No prose outside the JSON.
 - Producing only happy-path work units. If you finish and >70% of your units are happy-path, you missed edge cases — re-enumerate.
 - Treating a private helper as a unit target. If it has no externally observable contract, don't test it directly; test through its public caller.
 - Inventing behaviors not supported by the source, docs, or spec. If unclear, leave the function untested and note it in `notes_to_orchestrator`.
+- Locking a serialization / JSON-shape contract for only **some** variants of an enum or sum type. If you pin the wire shape of one variant, pin **every** variant (each gets its own assertion in `intended_behavior`) — an unspecified variant is a hole an implementation can fill with any shape, undetected by the suite.
+- Emitting `preconditions` / `inputs` / `expected` as a JSON **array or object**. The schema (`work-unit.schema.json`) types these as scalar `string` with `additionalProperties: false`; an array fails validation and forces the orchestrator to hand-normalize. If you have multiple items, join them into ONE string (e.g. `"; "`-separated). Only `intended_behavior` carries the semantic weight — keep the hint fields as flat strings.
 - In spec mode, choosing a `target_stub_path` that collides with unrelated existing files. If a name collision is plausible, pick a more specific path.

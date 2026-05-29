@@ -1,5 +1,5 @@
 #![no_main]
-//! Fuzz harness for `regression_tests::commands::reproducer_to_test::format_rust_byte_literal`.
+//! Fuzz harness for `straightjacket::commands::reproducer_to_test::format_rust_byte_literal`.
 //!
 //! Invariants checked:
 //!   1. Output starts with `&[` and ends with `]`.
@@ -14,7 +14,7 @@
 //! of input bytes in the emitted literal.
 
 use libfuzzer_sys::fuzz_target;
-use regression_tests::commands::reproducer_to_test::format_rust_byte_literal;
+use straightjacket::commands::reproducer_to_test::format_rust_byte_literal;
 
 fuzz_target!(|data: &[u8]| {
     let out = format_rust_byte_literal(data);

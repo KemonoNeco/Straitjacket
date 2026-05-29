@@ -28,7 +28,7 @@ regression-tests-plugin/
 │   ├── marketplace.json
 │   └── plugin.json
 ├── skills/                 (2) Skill orchestrator playbook
-│   └── regression-tests/SKILL.md
+│   └── regression/SKILL.md
 ├── agents/                 (3) Ten specialist agent definitions
 │   ├── coverage-reviewer.md
 │   ├── unit-test-author.md
@@ -42,7 +42,7 @@ regression-tests-plugin/
 │   └── fuzz-runner.md
 ├── hooks/                  (4) Three Claude Code hook bindings
 │   └── hooks.json
-├── bin/regression-tests.exe (5a) Pre-built helper binary (committed, ~3MB)
+├── bin/straightjacket.exe (5a) Pre-built helper binary (committed, ~3MB)
 ├── src/                    (5b) Helper-binary source (10 subcommands)
 │   ├── main.rs
 │   ├── lib.rs
@@ -53,7 +53,7 @@ regression-tests-plugin/
 
 The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skill shells out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
 
-> A TDD skill (`skills/tdd/`) and an `implementation-author` agent previously shipped alongside the regression-tests skill. They have been temporarily removed and will be reimplemented later. Some Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation.
+> A TDD skill (`skills/tdd/`) and an `implementation-author` agent previously shipped alongside the regression skill. They have been temporarily removed and will be reimplemented later. Some Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation.
 
 ## The five-layer architecture
 
@@ -72,10 +72,10 @@ flowchart TB
 
 | Layer | Lives in | Role |
 |---|---|---|
-| 1 - Rust CLI | `bin/regression-tests.exe` | 10 subcommands |
+| 1 - Rust CLI | `bin/straightjacket.exe` | 10 subcommands |
 | 2 - Shared infra | `src/common/` | walk, subprocess, json_io |
 | 3 - Specialist agents | `agents/*.md` | 10 agents |
-| 4 - Skill orchestrator | `skills/regression-tests/SKILL.md` | main Claude session |
+| 4 - Skill orchestrator | `skills/regression/SKILL.md` | main Claude session |
 | 5 - Hooks | `hooks/hooks.json` | 3 events |
 
 **Cardinal rule per layer** (each layer has exactly one):
@@ -88,11 +88,11 @@ flowchart TB
 
 ## Skill phase flow
 
-The `regression-tests` skill runs a coverage-planning → authoring → adversarial-review → mutation cadence over five phases:
+The `straightjacket` skill runs a coverage-planning → authoring → adversarial-review → mutation cadence over five phases:
 
 ```mermaid
 flowchart TD
-    Start(["/regression-tests"])
+    Start(["/straightjacket"])
     Hook["Hook<br/>preflight"]
     P1["Phase 1<br/>Detect &amp; Baseline"]
     P2["Phase 2<br/>Coverage Planning"]
@@ -139,9 +139,9 @@ Tool inventory:
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | single, Phase 2 |
 | `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | ≤6 parallel |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | ≤6 parallel |
-| `adversarial-vacuousness` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
-| `adversarial-happy-path` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
-| `adversarial-misalignment` | sonnet | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-vacuousness` | opus | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-happy-path` | opus | high | Read, Grep, Glob | 3 in parallel, one message |
+| `adversarial-misalignment` | opus | high | Read, Grep, Glob | 3 in parallel, one message |
 | `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | single, after specialists |
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | ≤3 parallel |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | single |
@@ -149,7 +149,7 @@ Tool inventory:
 
 **Tool restrictions are load-bearing.** The three `adversarial-*` specialists do *not* have `Bash` or `PowerShell`. They cannot `git diff`, cannot read git history, cannot shell out. That isolation from "what changed" is the structural guarantee that adversarial review is not anchored to author rationalizations. The plugin's `PreToolUse` hook adds defense-in-depth by scanning prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before the spawn.
 
-**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes. Sonnet 4.6 outperforms a multi-dimensional brief; a downstream Opus `adversarial-synthesis` dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern the plugin is built around.
+**Why three adversarial specialists instead of one super-reviewer.** Each has a single dimension (vacuousness / happy-path / misalignment) and is told explicitly *not* to drift into the others' lanes — a focused single-lens brief beats one multi-dimensional reviewer. All three run on **Opus** at `high` effort (the Opus 4.8 default; `xhigh` is reserved for the genuinely complex roles — synthesis, coverage planning, integration authoring — not a bounded single-lens critique), chosen for critique catch-rate (Opus 4.8 lets flaws pass unremarked markedly less often), and a downstream Opus `adversarial-synthesis` (`xhigh`) dedupes and ranks the three reports. This is the "panel of specialists + synthesizer" pattern the plugin is built around. *Trade-off, recorded:* an all-Opus adversarial stack sacrifices some model-diversity independence for raw catch-rate; revisit by A/B-ing specialist models against mutation-survivor counts (the plugin's own instrument).
 
 **Why parallel-in-one-message.** Spawning the three adversarial specialists in *separate* messages serializes them - Claude Code only fans out `Agent` tool calls within a single response. Same applies to author chunks in Phase 3 and the synthesis/fuzz parallel pair in Phase 4.
 
@@ -170,12 +170,12 @@ Three Claude Code hook events, each backed by a pure function in `src/commands/h
 * `Allow` → empty object (no stdout).
 * `RunChecks(...)` → `{checks_to_run: ["verify-new-tests-compile", ...]}` - kebab-case names; orchestrator dispatches.
 
-**Why `verify-no-test-mutation` is not a per-author hook.** An earlier iteration ran SHA-256 checks after every author returned. False positives flooded the test runs because idiomatic Rust source files embed `#[cfg(test)] mod tests`, so a legitimate authoring of an in-source test trips a "test file modified" warning. The current design runs the audit *once* at end-of-phase by the orchestrator (still backed by `bin/regression-tests verify-no-test-mutation`) and relies on the `adversarial-vacuousness` + `adversarial-misalignment` specialists as primary cheat detection.
+**Why `verify-no-test-mutation` is not a per-author hook.** An earlier iteration ran SHA-256 checks after every author returned. False positives flooded the test runs because idiomatic Rust source files embed `#[cfg(test)] mod tests`, so a legitimate authoring of an in-source test trips a "test file modified" warning. The current design runs the audit *once* at end-of-phase by the orchestrator (still backed by `bin/straightjacket verify-no-test-mutation`) and relies on the `adversarial-vacuousness` + `adversarial-misalignment` specialists as primary cheat detection.
 
 ## The Rust CLI surface
 
 ```
-regression-tests <subcommand> [options]
+straightjacket <subcommand> [options]
 
   detect-stack              repo→{rust|csharp|both|none} + manifest paths
   preflight                 detect-stack + baseline-check + lint-check
@@ -242,7 +242,7 @@ WorkUnit
 ├── output_test_name    Language-appropriate test name.
 ├── target_stub_path    Reserved for future use (the TDD skill that consumed
 │                       this field has been temporarily removed). Currently
-│                       null in regression-tests mode.
+│                       null in straightjacket mode.
 ├── status              "pending" | "written" | "implemented" | "rejected_lint" |
 │                       "quarantined" | "surfaced_bug"
 ├── round               -1 (fuzz reproducer) | 0 (initial) | N (adversarial round)
@@ -272,8 +272,8 @@ WorkUnit
    * A `#[cfg(test)] mod tests` block.
 2. Add `pub mod <my_cmd>;` to `src/commands/mod.rs`.
 3. Add the variant to `Commands` in `src/main.rs` and wire it into the `match cli.command`.
-4. Rebuild: `cargo build --release && cp target/release/regression-tests.exe bin/regression-tests.exe`.
-5. Commit the new `bin/regression-tests.exe`.
+4. Rebuild: `cargo build --release && cp target/release/straightjacket.exe bin/straightjacket.exe`.
+5. Commit the new `bin/straightjacket.exe`.
 
 ### Adding a new specialist agent
 

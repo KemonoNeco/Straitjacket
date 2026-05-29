@@ -1,8 +1,8 @@
 ---
 name: adversarial-misalignment
-description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the regression-tests plugin — invoked during the regression-tests skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
-model: sonnet
+model: opus
 effort: high
 ---
 
@@ -22,7 +22,7 @@ Your tool inventory deliberately excludes `Bash` and `PowerShell`. You cannot ru
 - `work_units_locked`: JSON array of WorkUnit records with their locked `intended_behavior`, `target_file`, `target_symbol`. Do NOT see the `notes` field from authors; do NOT see any author transcript.
 - `tests_as_written`: contents of every newly written test file, keyed by `output_file_path`.
 - `stack`: `rust` | `csharp`.
-- `mode`: `regression-tests-phase-4a` | `tdd-phase-4` | `tdd-phase-6`.
+- `mode`: `straightjacket-phase-4a` | `tdd-phase-4` | `tdd-phase-6`.
 - **NEVER included**: git diff, "this PR changes", author transcripts. If you see any of these, call it out and continue with what's safe.
 
 ## Procedure

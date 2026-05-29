@@ -1,9 +1,9 @@
 ---
-name: regression-tests
+name: regression
 description: "Generate regression tests for recent changes or a target module using a multi-agent workflow (coverage review → parallel test authoring → adversarial specialist team + synthesis → real mutation testing → fuzzing with reproducer mining). Enforces compile/lint baselines before and after authoring via plugin hooks. Use when the user asks to write regression tests, generate tests for a diff or PR, lock in current behavior, harden a module against regressions, mine fuzz crashes into deterministic tests, add tests for under-tested code, write tests for changes, increase test coverage, or add edge-case tests. Supports Rust (cargo + clippy + cargo-mutants + cargo-fuzz) and C# (dotnet + Stryker.NET + SharpFuzz). Writes tests directly into the repo."
 ---
 
-# regression-tests
+# regression
 
 ## Cardinal Rule 0 — YOU ARE THE ORCHESTRATOR
 
@@ -22,9 +22,9 @@ You spawn these by `subagent_type` (bare name — the plugin namespace is implic
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | Phase 2. Single agent. Locks `intended_behavior`. |
 | `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team (chunk ~3-5 units/agent). |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Phase 3. Parallel team. |
-| `adversarial-vacuousness` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
-| `adversarial-happy-path` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
-| `adversarial-misalignment` | sonnet | high | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
+| `adversarial-vacuousness` | opus | high | Read, Grep, Glob | Phase 4a specialist (vacuous assertions + test-mutation patterns). |
+| `adversarial-happy-path` | opus | high | Read, Grep, Glob | Phase 4a specialist (happy-path bias + edge-case enumeration). |
+| `adversarial-misalignment` | opus | high | Read, Grep, Glob | Phase 4a specialist (test ↔ contract alignment). |
 | `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | Phase 4a synthesis over the three specialists' reports. |
 | `mutation-runner` | haiku | — | Read, Bash, PowerShell | Phase 4a. Parallel team capped at 2-3. Mechanical. |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Phase 4b. Single. |
@@ -38,6 +38,19 @@ You spawn these by `subagent_type` (bare name — the plugin namespace is implic
 4. **The Adversarial specialists never see the diff** (or "what changed" framing, or author transcripts). The plugin's PreToolUse hook scans the constructed prompt for forbidden strings (`--- a/`, `+++ b/`, `git diff`) and blocks the spawn if found. As defense-in-depth, also avoid inlining diff text yourself.
 5. **Parallel spawns go in a single message** with multiple `Agent` tool-use blocks. Sequential messages defeat the concurrency. This applies to chunked author teams in Phase 3, the three adversarial specialists in Phase 4a, and the adversarial+fuzz pair in Phase 4.
 6. **Subagent response JSON parse failures**: retry once with a "your previous response was not valid JSON — return only valid JSON matching <schema>" prefix. After one retry, abort that work unit and continue.
+
+## Dispatch convention (workflow-first, with Agent fallback)
+
+This skill is **workflow-first**: the deterministic fan-out phases — Phase 3 authoring, and the Phase 4a adversarial team + synthesis + mutation — run as **dynamic-Workflow stages** when the `Workflow` tool is available, and fall back to direct `Agent` dispatch when it is not. The single Phase-2 `coverage-reviewer` and every merge/checkpoint stay in this main session (a workflow cannot pause, so each fan-out stage is its own invocation).
+
+**Capability check:** inspect your own available tools for one named `Workflow`.
+- **Present** → for a fan-out phase, run `straightjacket workflow-script <stage>` (Bash) to emit the stage script to stdout, capture it verbatim, and call `Workflow({script: <captured>, args: {...bindings}})`. The two stages:
+  - `fanout` (Phase 3 authoring) — `args.tasks = [{agentType, prompt, label}]` (one per author chunk), `args.cap = 6`.
+  - `adversarial` (Phase 4a) — `args = {workUnits, stack, mode: "lock", toolingAvailable, repoRoot}`; the script fans out the three specialists, runs `adversarial-synthesis`, then the mutation-runner team, and returns the canonical review + surviving mutants in one result.
+  Parse the structured result and merge into `work-units.json` (you stay the single writer). After the `fanout` authoring stage, run `straightjacket verify-new-tests-compile …` yourself (the PostToolUse hook does NOT fire for workflow-spawned agents).
+- **Absent** → dispatch the same agents directly via `Agent`, all parallel spawns in one message (the inline path described in each phase below).
+
+Either way the agents, prompts, schemas, and per-team caps are identical — the workflow only changes the dispatch substrate. **The diff is never a workflow binding**; adversarial specialists Read the post-change source themselves. Their `tools: Read, Grep, Glob` restriction holds for workflow-spawned agents too (spike-verified), so Rule 4 stands — but the PreToolUse diff-scan hook fires only in the Agent path, so in the workflow path isolation rests entirely on the tool restriction + you never passing the diff.
 
 ## Args
 
@@ -57,7 +70,7 @@ Parse from the user's invocation. Recognized flags:
 2. Resolve `repo_root` = absolute path to the current working tree.
 3. Capture `now_iso` = current ISO-8601 timestamp.
 
-The plugin's `UserPromptExpansion` hook fires on the slash-command invocation and runs `regression-tests preflight` (combined detect-stack + baseline-check + lint-check). If the hook blocks with `decision: "block"`, the skill does NOT run — investigate the failing checks first.
+The plugin's `UserPromptExpansion` hook fires on the slash-command invocation and runs `straightjacket preflight` (combined detect-stack + baseline-check + lint-check). If the hook blocks with `decision: "block"`, the skill does NOT run — investigate the failing checks first.
 
 ---
 
@@ -74,7 +87,7 @@ The plugin's `UserPromptExpansion` hook fires on the slash-command invocation an
      - `untracked` = `git status --porcelain` (entries starting with `??`).
      - `scope` = union of files in `diff` + `untracked`.
 
-2. **Stack detection.** Run `regression-tests detect-stack --repo-root <repo_root>`. Output: `rust` | `csharp` | `both` | `none`. If `none`, abort with "no supported stack found."
+2. **Stack detection.** Run `straightjacket detect-stack --repo-root <repo_root>`. Output: `rust` | `csharp` | `both` | `none`. If `none`, abort with "no supported stack found."
 
 3. **Tooling check.** For each detected stack, probe for tools:
    - Rust: `cargo-mutants` (`cargo mutants --version`), `cargo-fuzz` (probe via `cargo fuzz --version 2>&1 | <discard>` or `cargo fuzz list 2>&1`; **never** call `cargo fuzz --version` with a live stdout to a terminal — cargo-fuzz v0.13.1 pulls in `is-terminal v0.4.1` which panics on certain Windows console widths during terminal-width probing, so use redirected output or treat the "could not read fuzz/Cargo.toml" error from `cargo fuzz list` as "installed"), `cargo-llvm-cov` (`cargo llvm-cov --version`).
@@ -88,7 +101,7 @@ The plugin's `UserPromptExpansion` hook fires on the slash-command invocation an
 
 5. **Baseline compile/lint clean.** Same — preflight already ran `lint-check`.
 
-6. **Test snapshot.** Run `regression-tests snapshot-tests --repo-root <repo_root> --out-file <run_id>/test-snapshot.json`. SHA-256 every pre-existing test file.
+6. **Test snapshot.** Run `straightjacket snapshot-tests --repo-root <repo_root> --out-file <run_id>/test-snapshot.json`. SHA-256 every pre-existing test file.
 
 7. **Baseline coverage snapshot.** If coverage tool is present, run it now and save to `<run_id>/coverage-baseline.json`. If absent, skip.
 
@@ -134,17 +147,17 @@ Partition work units by `kind`, then **chunk into agent teams**:
 - Hard cap: max 6 parallel author Agents per kind.
 
 For each chunk, build a prompt header containing:
-- `mode: "regression-tests"` (so authors do NOT generate stubs at `target_stub_path`).
+- `mode: "straightjacket"` (so authors do NOT generate stubs at `target_stub_path`).
 - The assigned work units for this chunk as a JSON array.
 - For each work unit, the source-under-test file contents.
 - The pre-existing test snapshot file path so the author can avoid modifying existing files.
 - The locked `intended_behavior` per unit, plus the explicit rule: "You may CREATE `output_file_path`. You may NOT modify any test file listed in test-snapshot.json. You may NOT rewrite `intended_behavior`."
 
-**Spawn every author chunk in a single message** — one `Agent` tool-use block per chunk, all in parallel.
+**Spawn every author chunk in a single message** — one `Agent` tool-use block per chunk, all in parallel. *(Workflow path: pass each chunk's prompt + agentType as the `fanout` stage's `args.tasks`, `cap: 6` — see the Dispatch convention; then run `verify-new-tests-compile` yourself.)*
 
 The plugin's PostToolUse hook automatically runs `verify-new-tests-compile` after each author returns. If the hook blocks (compile failure), the diagnostic comes back to you for retry; re-dispatch the failing units with the diagnostic inlined. Allow one retry per unit; after that, mark `status: quarantined`.
 
-After all author chunks have returned, run `regression-tests verify-no-test-mutation --repo-root <repo_root> --snapshot-file <run_id>/test-snapshot.json` ONCE as an end-of-phase audit. Surface any reported violations in the run summary — these are pre-existing test files that an author touched against the prompt rule. They do not block iteration (the adversarial-vacuousness specialist re-checks the test corpus in Phase 4a), but they are noteworthy.
+After all author chunks have returned, run `straightjacket verify-no-test-mutation --repo-root <repo_root> --snapshot-file <run_id>/test-snapshot.json` ONCE as an end-of-phase audit. Surface any reported violations in the run summary — these are pre-existing test files that an author touched against the prompt rule. They do not block iteration (the adversarial-vacuousness specialist re-checks the test corpus in Phase 4a), but they are noteworthy.
 
 Merge author results into `work-units.json`. For each successful unit, set `status: written` and confirm `output_test_name`.
 
@@ -156,10 +169,12 @@ In a single message, spawn the three Phase 4a specialists in parallel. Then (aft
 
 ### 4a. Adversarial specialist team + synthesis
 
-**Three Sonnet specialists, single message, parallel:**
+> **Workflow path:** run the `adversarial` stage (`args.mode: "lock"`) — one invocation fans out the three specialists, then `adversarial-synthesis`, then the capped mutation-runner team, returning the canonical review + surviving mutants. The inline Agent-path steps below are the fallback when the `Workflow` tool is absent.
+
+**Three Opus specialists, single message, parallel:**
 
 Build a shared "no-diff" header containing:
-- `mode: "regression-tests-phase-4a"`.
+- `mode: "straightjacket-phase-4a"`.
 - Post-change source code for every file touched by work units. **NOT THE DIFF.**
 - The locked `intended_behavior` for each test (from `work-units.json`).
 - The test code as written (read from disk at the `output_file_path` values).
@@ -191,7 +206,7 @@ Skip this entire sub-phase if any of: `args.quick`, `args.no_fuzz`, no fuzz tool
 
 Build the spawn header containing:
 - Fuzzable targets (work units with `fuzzable: true`).
-- Project-specific scaffolding info from `regression-tests fuzz-setup --repo-root <repo_root> --stack <stack>`.
+- Project-specific scaffolding info from `straightjacket fuzz-setup --repo-root <repo_root> --stack <stack>`.
 - The per-target time budget (`args.fuzz_time` or 60s).
 
 Spawn `subagent_type: "fuzz-harness-author"`. It writes harnesses and returns runner tasks.
@@ -200,7 +215,7 @@ For each runner task, spawn `subagent_type: "fuzz-runner"`. **Parallel team capp
 
 For each crash artifact, run:
 ```
-regression-tests reproducer-to-test \
+straightjacket reproducer-to-test \
   --repro-path <path> \
   --target-file <file> \
   --target-function <symbol> \
@@ -214,7 +229,7 @@ This generates a deterministic regression test named after a hash of the input b
 
 ## Phase 5 — Verify & Finalize
 
-1. **Run new tests 3x.** Run `regression-tests run-new-tests --repo-root <repo_root> --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>`. The CLI returns per-unit results with `classification` (all_pass / all_fail / flaky / never_found) and a recommended `status`.
+1. **Run new tests 3x.** Run `straightjacket run-new-tests --repo-root <repo_root> --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>`. The CLI returns per-unit results with `classification` (all_pass / all_fail / flaky / never_found) and a recommended `status`.
 
    Classify per the recommended status:
    - `all_pass` → `status: written`. Keep.
@@ -260,6 +275,6 @@ Present the report verbatim to the user as your end-of-turn output.
 
 ## Notes
 
-- The skill spawns Opus and Sonnet specialists and may iterate up to 3 rounds. A non-trivial diff can cost 10-20 Opus turns plus 5-10 Sonnet turns. Print the budget estimate from Phase 1 step 9.
+- The skill spawns Opus agents (coverage-reviewer, integration-test-author, the three adversarial specialists, synthesis, fuzz-harness-author), Sonnet (unit-test-author), and Haiku runners, and may iterate up to 3 rounds. The adversarial trio is now Opus (chosen for critique catch-rate), so a non-trivial diff is mostly Opus turns — budget accordingly. Print the budget estimate from Phase 1 step 9.
 - All file artifacts live under `<repo>/.claude-regression/<run-id>/`.
-- The `regression-tests` CLI is on PATH via the plugin's `bin/` directory while the plugin is enabled.
+- The `straightjacket` CLI is on PATH via the plugin's `bin/` directory while the plugin is enabled.

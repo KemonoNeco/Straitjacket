@@ -1,3 +1,5 @@
+use crate::commands::detect_stack::detect_stack;
+use crate::common::cargo_target::{cargo_invocation, resolve_cargo_target, CargoInvocation};
 use crate::common::json_io::{parse_work_units_array, read_json_file};
 use crate::common::subprocess::{run_with_timeout, RunResult};
 use crate::common::Stack;
@@ -69,6 +71,7 @@ pub struct RunNewTestsResult {
     pub summary: String,
     pub per_unit_results: Vec<PerUnitResult>,
     pub log_path: PathBuf,
+    pub nothing_to_run: bool,
 }
 
 /// Determines whether a Rust test by `name` passed, failed, or was not present in the output.
@@ -144,13 +147,13 @@ pub fn classify(statuses: &[TestStatus], expect: Expect, runs: u32) -> (Classifi
     }
 }
 
-#[derive(Clone)]
-struct NewUnit {
-    id: String,
-    test_name: String,
-    file_path: String,
-    is_rust: bool,
-    is_csharp: bool,
+#[derive(Clone, Debug)]
+pub struct NewUnit {
+    pub id: String,
+    pub test_name: String,
+    pub file_path: String,
+    pub is_rust: bool,
+    pub is_csharp: bool,
 }
 
 fn collect_new_units(work_units_file: &Path) -> anyhow::Result<Vec<NewUnit>> {
@@ -210,18 +213,41 @@ fn run_one_round(repo_root: &Path, stack: Stack, log_path: &Path, round: u32) ->
     let mut rust_out = String::new();
     let mut csharp_out = String::new();
     if matches!(stack, Stack::Rust | Stack::Both) {
-        let r: RunResult = run_with_timeout(
-            "cargo",
-            &["test", "--workspace", "--no-fail-fast"],
-            repo_root,
-            Duration::from_secs(900),
-        )?;
-        append_section(
-            log_path,
-            &format!("cargo test (exit {})", r.exit_code),
-            &r.combined_output,
-        )?;
-        rust_out = r.combined_output;
+        let manifests = detect_stack(repo_root)?.rust_manifests;
+        let target = resolve_cargo_target(&manifests, repo_root);
+        match cargo_invocation(&target, &["test", "--no-fail-fast"]) {
+            CargoInvocation::Run { cwd, args } => {
+                let argv: Vec<&str> = args.iter().map(String::as_str).collect();
+                let r: RunResult =
+                    run_with_timeout("cargo", &argv, &cwd, Duration::from_secs(900))?;
+                append_section(
+                    log_path,
+                    &format!("cargo test (exit {})", r.exit_code),
+                    &r.combined_output,
+                )?;
+                rust_out = r.combined_output;
+            }
+            CargoInvocation::Skip => {
+                // No Rust target — leave rust_out empty; units classify as NeverFound.
+            }
+            CargoInvocation::Ambiguous { candidates } => {
+                let joined = candidates
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                append_section(
+                    log_path,
+                    "cargo target resolution",
+                    &format!(
+                        "ambiguous-cargo-target: multiple crates with no root manifest: {}",
+                        joined
+                    ),
+                )?;
+                // Leave rust_out empty so tests classify as NeverFound/quarantined,
+                // never a silent pass.
+            }
+        }
     }
     if matches!(stack, Stack::Csharp | Stack::Both) {
         let r: RunResult = run_with_timeout(
@@ -265,6 +291,7 @@ pub fn run_new_tests(
             summary: "no newly-written tests".into(),
             per_unit_results: vec![],
             log_path,
+            nothing_to_run: true,
         });
     }
 
@@ -313,7 +340,115 @@ pub fn run_new_tests(
         ),
         per_unit_results,
         log_path,
+        nothing_to_run: false,
     })
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurvivalReport {
+    pub ok: bool,
+    pub nothing_to_verify: bool,
+    pub survived: Vec<String>,
+    pub regressed: Vec<String>,
+    pub missing: Vec<String>,
+}
+
+/// Compares the names that were RED in the red phase against their status after the green run.
+pub fn name_survival(expected_red_names: &[&str], green_statuses: &[(String, TestStatus)]) -> SurvivalReport {
+    let nothing_to_verify = expected_red_names.is_empty();
+    let mut survived = Vec::new();
+    let mut regressed = Vec::new();
+    let mut missing = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+
+    for &name in expected_red_names {
+        if seen.contains(&name) {
+            continue;
+        }
+        seen.push(name);
+        let status = green_statuses
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, s)| *s);
+        match status {
+            Some(TestStatus::Pass) => survived.push(name.to_string()),
+            Some(TestStatus::Fail) => regressed.push(name.to_string()),
+            Some(TestStatus::Unknown) | None => missing.push(name.to_string()),
+        }
+    }
+
+    let ok = missing.is_empty() && regressed.is_empty() && !nothing_to_verify;
+    SurvivalReport {
+        ok,
+        nothing_to_verify,
+        survived,
+        regressed,
+        missing,
+    }
+}
+
+#[derive(Debug)]
+pub struct CollectByNameResult {
+    pub units: Vec<NewUnit>,
+    pub unmatched: Vec<String>,
+}
+
+/// Selects work units by an explicit name list, IGNORING each unit's `status` field.
+pub fn collect_units_by_name(work_units_file: &Path, names: &[&str]) -> anyhow::Result<CollectByNameResult> {
+    let v: serde_json::Value = read_json_file(work_units_file)?;
+    let arr = parse_work_units_array(&v).unwrap_or(&[]);
+
+    // Lookup of units by output_test_name; units missing that field are skipped.
+    let mut by_name: std::collections::HashMap<&str, &serde_json::Value> =
+        std::collections::HashMap::new();
+    for u in arr {
+        let test_name = match u.get("output_test_name").and_then(|s| s.as_str()) {
+            Some(s) => s,
+            None => continue,
+        };
+        by_name.entry(test_name).or_insert(u);
+    }
+
+    let mut units = Vec::new();
+    let mut unmatched = Vec::new();
+    let mut seen: Vec<&str> = Vec::new();
+
+    for &name in names {
+        if seen.contains(&name) {
+            continue;
+        }
+        seen.push(name);
+        match by_name.get(name) {
+            Some(u) => {
+                let id = u
+                    .get("id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let file_path = u
+                    .get("output_file_path")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or_default()
+                    .to_string();
+                let ext = Path::new(&file_path)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|s| s.to_lowercase());
+                let is_rust = ext.as_deref() == Some("rs");
+                let is_csharp = ext.as_deref() == Some("cs");
+                units.push(NewUnit {
+                    id,
+                    test_name: name.to_string(),
+                    file_path,
+                    is_rust,
+                    is_csharp,
+                });
+            }
+            None => unmatched.push(name.to_string()),
+        }
+    }
+
+    Ok(CollectByNameResult { units, unmatched })
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
@@ -420,7 +555,7 @@ mod tests {
         assert_eq!(c, Classification::NeverFound);
     }
 
-    // --- appended by unit-test-author (regression-tests, 2026-05-14) ---
+    // --- appended by unit-test-author (straightjacket, 2026-05-14) ---
 
     #[test]
     fn test_rust_test_status_distinguishes_exact_name_from_longer_prefix_sibling() {
@@ -557,5 +692,384 @@ mod tests {
             units.iter().map(|u| &u.id).collect::<Vec<_>>()
         );
         assert_eq!(units[0].id, "inner-written");
+    }
+
+    // --- B: nothing_to_run field tests ---
+
+    /// RED: placeholder is `false`; contract requires `true` when no units are collected.
+    #[test]
+    fn test_nothing_to_run_is_true_when_no_units_collected() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-pending",
+                "status": "pending",
+                "output_test_name": "test_pending",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let work_units_file = dir.path().join("work-units.json");
+        std::fs::write(&work_units_file, work_units_json.to_string()).unwrap();
+        let log_dir = dir.path().join("logs");
+
+        let result = run_new_tests(
+            dir.path(),
+            &work_units_file,
+            crate::common::Stack::Rust,
+            &log_dir,
+            3,
+            Expect::Pass,
+        )
+        .unwrap();
+
+        assert!(result.nothing_to_run, "nothing_to_run must be true when no written units are found");
+        assert!(result.per_unit_results.is_empty());
+    }
+
+    /// GREEN against placeholder: one written unit + runs=0 → no cargo spawned; placeholder `false` matches.
+    #[test]
+    fn test_nothing_to_run_is_false_when_units_present() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-written",
+                "status": "written",
+                "output_test_name": "test_written",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let work_units_file = dir.path().join("work-units.json");
+        std::fs::write(&work_units_file, work_units_json.to_string()).unwrap();
+        let log_dir = dir.path().join("logs");
+
+        let result = run_new_tests(
+            dir.path(),
+            &work_units_file,
+            crate::common::Stack::Rust,
+            &log_dir,
+            0, // runs=0: for round in 1..=0 iterates zero times, no cargo spawned
+            Expect::Pass,
+        )
+        .unwrap();
+
+        assert!(!result.nothing_to_run, "nothing_to_run must be false when written units are present");
+        assert!(!result.per_unit_results.is_empty());
+    }
+
+    /// GREEN against placeholder: serialized JSON must contain a boolean key named "nothing_to_run".
+    #[test]
+    fn test_run_new_tests_result_serializes_nothing_to_run_key() {
+        let log_dir = tempfile::tempdir().unwrap();
+        let result = RunNewTestsResult {
+            runs: 1,
+            summary: "test".into(),
+            per_unit_results: vec![],
+            log_path: log_dir.path().join("run_new_tests.log"),
+            nothing_to_run: false,
+        };
+        let value = serde_json::to_value(&result).unwrap();
+        let field = value.get("nothing_to_run");
+        assert!(field.is_some(), "serialized JSON must contain 'nothing_to_run' key");
+        assert!(field.unwrap().is_boolean(), "'nothing_to_run' must serialize as a boolean");
+    }
+
+    // --- C: name_survival tests (all RED against unimplemented!()) ---
+
+    #[test]
+    fn test_name_survival_all_present_and_pass_are_survived() {
+        let green = vec![
+            ("a".to_string(), TestStatus::Pass),
+            ("b".to_string(), TestStatus::Pass),
+        ];
+        let report = name_survival(&["a", "b"], &green);
+        assert!(report.ok);
+        assert!(!report.nothing_to_verify);
+        let mut survived = report.survived.clone();
+        survived.sort();
+        assert_eq!(survived, vec!["a", "b"]);
+        assert!(report.regressed.is_empty());
+        assert!(report.missing.is_empty());
+    }
+
+    #[test]
+    fn test_name_survival_present_but_fail_is_regressed_and_not_ok() {
+        let green = vec![("a".to_string(), TestStatus::Fail)];
+        let report = name_survival(&["a"], &green);
+        assert!(!report.ok);
+        assert!(report.survived.is_empty());
+        assert_eq!(report.regressed, vec!["a"]);
+        assert!(report.missing.is_empty());
+    }
+
+    #[test]
+    fn test_name_survival_now_unknown_is_missing_and_not_ok() {
+        let green = vec![("a".to_string(), TestStatus::Unknown)];
+        let report = name_survival(&["a"], &green);
+        assert!(!report.ok);
+        assert!(report.survived.is_empty());
+        assert!(report.regressed.is_empty());
+        assert_eq!(report.missing, vec!["a"]);
+    }
+
+    #[test]
+    fn test_name_survival_mixed_categories_partition_correctly_and_not_ok() {
+        let green = vec![
+            ("a".to_string(), TestStatus::Pass),
+            ("b".to_string(), TestStatus::Fail),
+            ("c".to_string(), TestStatus::Unknown),
+        ];
+        let report = name_survival(&["a", "b", "c"], &green);
+        assert!(!report.ok);
+        assert_eq!(report.survived, vec!["a"]);
+        assert_eq!(report.regressed, vec!["b"]);
+        assert_eq!(report.missing, vec!["c"]);
+    }
+
+    #[test]
+    fn test_name_survival_empty_expected_set_is_nothing_to_verify_and_not_ok() {
+        let green = vec![("a".to_string(), TestStatus::Pass)];
+        let report = name_survival(&[], &green);
+        assert!(report.nothing_to_verify);
+        assert!(!report.ok);
+        // An impl that sets nothing_to_verify but still fills the partitions must fail.
+        assert!(report.survived.is_empty());
+        assert!(report.regressed.is_empty());
+        assert!(report.missing.is_empty());
+    }
+
+    #[test]
+    fn test_name_survival_ignores_green_names_not_in_expected_set() {
+        let green = vec![
+            ("a".to_string(), TestStatus::Pass),
+            ("z".to_string(), TestStatus::Fail),
+        ];
+        let report = name_survival(&["a"], &green);
+        assert!(report.ok);
+        assert_eq!(report.survived, vec!["a"]);
+        assert!(report.regressed.is_empty());
+        assert!(report.missing.is_empty());
+        assert!(!report.survived.contains(&"z".to_string()));
+        assert!(!report.regressed.contains(&"z".to_string()));
+        assert!(!report.missing.contains(&"z".to_string()));
+    }
+
+    #[test]
+    fn test_name_survival_deduplicates_repeated_expected_name() {
+        let green = vec![("a".to_string(), TestStatus::Pass)];
+        let report = name_survival(&["a", "a"], &green);
+        assert_eq!(report.survived.len(), 1);
+        assert_eq!(report.survived, vec!["a"]);
+    }
+
+    // --- D: collect_units_by_name tests (all RED against unimplemented!()) ---
+
+    #[test]
+    fn test_collect_units_by_name_collects_pending_status_unit() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-pending",
+                "status": "pending",
+                "output_test_name": "test_pending",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_pending"]).unwrap();
+        assert_eq!(result.units.len(), 1);
+        assert_eq!(result.units[0].test_name, "test_pending");
+        assert!(result.unmatched.is_empty());
+    }
+
+    #[test]
+    fn test_collect_units_by_name_reports_unmatched_requested_names() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-a",
+                "status": "written",
+                "output_test_name": "test_a",
+                "output_file_path": "src/foo.rs"
+            },
+            {
+                "id": "unit-b",
+                "status": "pending",
+                "output_test_name": "test_b",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_a", "test_b", "test_missing"]).unwrap();
+        assert_eq!(result.units.len(), 2);
+        assert_eq!(result.unmatched, vec!["test_missing"]);
+        // Also assert WHICH two units were returned, not just the count.
+        let mut returned_names: Vec<String> =
+            result.units.iter().map(|u| u.test_name.clone()).collect();
+        returned_names.sort();
+        assert_eq!(returned_names, vec!["test_a", "test_b"]);
+    }
+
+    #[test]
+    fn test_collect_units_by_name_empty_request_collects_nothing() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-a",
+                "status": "written",
+                "output_test_name": "test_a",
+                "output_file_path": "src/foo.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &[]).unwrap();
+        assert!(result.units.is_empty());
+        assert!(result.unmatched.is_empty());
+    }
+
+    /// NEW (1b): wrapper-object shape `{"work_units":[...], "scope_summary":"..."}` must
+    /// extract units from the inner array, regardless of status filter (status is ignored here).
+    #[test]
+    fn test_collect_units_by_name_accepts_wrapper_object_shape() {
+        let wrapper = serde_json::json!({
+            "work_units": [
+                {
+                    "id": "wu-x",
+                    "status": "pending",
+                    "output_test_name": "test_x",
+                    "output_file_path": "src/x.rs"
+                }
+            ],
+            "scope_summary": "meta"
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, wrapper.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_x"]).unwrap();
+        assert_eq!(result.units.len(), 1);
+        assert_eq!(result.units[0].test_name, "test_x");
+        assert!(result.unmatched.is_empty());
+    }
+
+    /// NEW (1b): units lacking `output_test_name` must be silently skipped (not panic).
+    #[test]
+    fn test_collect_units_by_name_skips_unit_missing_output_test_name() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-malformed",
+                "status": "pending",
+                "output_file_path": "src/bad.rs"
+                // output_test_name intentionally absent
+            },
+            {
+                "id": "unit-good",
+                "status": "written",
+                "output_test_name": "test_good",
+                "output_file_path": "src/good.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        // Must not panic; malformed unit is silently skipped.
+        let result = collect_units_by_name(&path, &["test_good"]).unwrap();
+        assert_eq!(result.units.len(), 1);
+        assert_eq!(result.units[0].test_name, "test_good");
+        assert!(result.unmatched.is_empty());
+    }
+
+    /// NEW (1b): a repeated name in the request must yield only one unit, not two.
+    #[test]
+    fn test_collect_units_by_name_deduplicates_repeated_requested_name() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-a",
+                "status": "pending",
+                "output_test_name": "test_a",
+                "output_file_path": "src/a.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_a", "test_a"]).unwrap();
+        assert_eq!(result.units.len(), 1, "duplicate request must not double-return the unit");
+        assert!(result.unmatched.is_empty());
+    }
+
+    /// NEW (1b strength): dedup on the Fail branch — repeated expected name with a Fail
+    /// result must appear exactly once in `regressed`, not twice.
+    #[test]
+    fn test_name_survival_deduplicates_repeated_expected_name_fail_path() {
+        let green = vec![("a".to_string(), TestStatus::Fail)];
+        let report = name_survival(&["a", "a"], &green);
+        assert_eq!(report.regressed, vec!["a"], "regressed must contain 'a' exactly once");
+        assert_eq!(report.regressed.len(), 1, "dedup must collapse repeated name to len 1");
+        assert!(report.survived.is_empty());
+        assert!(report.missing.is_empty());
+    }
+
+    #[test]
+    fn test_collect_units_by_name_derives_is_rust_and_is_csharp_from_extension() {
+        // Two units: one with a .rs output path and one with a .cs output path.
+        // Asserts that is_rust / is_csharp flags are derived from the file extension,
+        // killing the two surviving mutants at lines 437-438.
+        let work_units_json = serde_json::json!([
+            {
+                "id": "u-rs",
+                "status": "pending",
+                "output_test_name": "test_rs",
+                "output_file_path": "src/x.rs"
+            },
+            {
+                "id": "u-cs",
+                "status": "pending",
+                "output_test_name": "test_cs",
+                "output_file_path": "Foo.cs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_rs", "test_cs"]).unwrap();
+        assert_eq!(result.units.len(), 2);
+        assert!(result.unmatched.is_empty());
+
+        let rs_unit = result.units.iter().find(|u| u.test_name == "test_rs").unwrap();
+        assert!(rs_unit.is_rust, "unit with .rs path must have is_rust = true");
+        assert!(!rs_unit.is_csharp, "unit with .rs path must have is_csharp = false");
+
+        let cs_unit = result.units.iter().find(|u| u.test_name == "test_cs").unwrap();
+        assert!(cs_unit.is_csharp, "unit with .cs path must have is_csharp = true");
+        assert!(!cs_unit.is_rust, "unit with .cs path must have is_rust = false");
+    }
+
+    #[test]
+    fn test_collect_units_by_name_single_match_returns_one_unit() {
+        let work_units_json = serde_json::json!([
+            {
+                "id": "unit-sole",
+                "status": "quarantined",
+                "output_test_name": "test_sole",
+                "output_file_path": "src/sole.rs"
+            }
+        ]);
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("work-units.json");
+        std::fs::write(&path, work_units_json.to_string()).unwrap();
+
+        let result = collect_units_by_name(&path, &["test_sole"]).unwrap();
+        assert_eq!(result.units.len(), 1);
+        assert!(result.unmatched.is_empty());
+        assert_eq!(result.units[0].test_name, "test_sole");
     }
 }

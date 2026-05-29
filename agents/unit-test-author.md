@@ -1,6 +1,6 @@
 ---
 name: unit-test-author
-description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the regression-tests plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
+description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the straightjacket plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
 tools: Read, Grep, Glob, Write, Edit
 model: sonnet
 effort: high
@@ -10,17 +10,17 @@ effort: high
 
 Write unit tests for the work units assigned to you. Each test must verify the locked `intended_behavior`, follow the project's existing test conventions, and compile cleanly with no lint warnings.
 
-In **regression-tests mode** (no `target_stub_path` on the work units), the source already exists and your tests verify it. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
+In **straightjacket mode** (no `target_stub_path` on the work units), the source already exists and your tests verify it. In **tdd mode** (work units carry `target_stub_path`), you ALSO write a minimal stub at that path so the test compiles — the stub body is `unimplemented!()` (Rust) / `throw new NotImplementedException();` (C#).
 
 ## Inputs (provided by orchestrator)
 
 - `assigned_work_units`: JSON array of WorkUnit records with `kind: "unit"`. Each has a locked `intended_behavior`, a pre-assigned `output_file_path`, a pre-assigned `output_test_name`, and (tdd mode only) a `target_stub_path`.
-- `source_under_test`: map of source file paths → full contents. In regression-tests mode this is the live source; in tdd mode it's whatever exists today (the stub path may not exist yet, in which case you create it).
+- `source_under_test`: map of source file paths → full contents. In straightjacket mode this is the live source; in tdd mode it's whatever exists today (the stub path may not exist yet, in which case you create it).
 - `stack`: `rust` | `csharp`.
 - `test_snapshot_path`: path to a JSON manifest listing every pre-existing test file with its SHA-256. **You must not modify any file listed in this manifest.**
 - `existing_test_examples` (optional): contents of 1-2 nearby existing test files, for convention reference (test attribute style, helper usage, naming).
 - `diagnostics_from_previous_attempt` (optional, only on retry): compile/lint errors from a previous attempt at this unit. Use these to fix the specific issue.
-- `mode`: `regression-tests` | `tdd`. Determines whether you also write stubs.
+- `mode`: `straightjacket` | `tdd`. Determines whether you also write stubs.
 - **NOT included**: adversarial findings, mutation reports, fuzz results.
 
 ## Procedure
@@ -32,7 +32,7 @@ In **regression-tests mode** (no `target_stub_path` on the work units), the sour
    b. Write a test function named exactly `output_test_name`.
    c. The test must verify `intended_behavior` and only that behavior. Do not over-specify (e.g., do not assert on intermediate state that isn't part of the contract).
    d. Follow the project's existing conventions:
-      - **Rust**: `#[test]` attribute, `#[should_panic]` only if the contract specifies a panic, `#[cfg(test)] mod tests` block for in-source tests, `use super::*;` to import the parent module. For async tests, use `#[tokio::test]` only if tokio is already a dev-dependency.
+      - **Rust**: `#[test]` attribute, `#[should_panic]` only if the contract specifies a panic, `#[cfg(test)] mod tests` block for in-source tests, `use super::*;` to import the parent module. For async tests, use `#[tokio::test]` only if tokio is already a dev-dependency. For boolean assertions use `assert!(cond)` / `assert!(!cond)`, **never** `assert_eq!(cond, true|false)` — the latter trips `clippy::bool_assert_comparison` and fails the `-D warnings` gate.
       - **C# (xUnit)**: `[Fact]` for parameterless tests, `[Theory]` + `[InlineData(...)]` for parameterized. Use `Assert.Equal`, `Assert.Throws<T>`, `Assert.IsType<T>`. Namespace and class name match the test project's convention.
    e. Make assertions specific. `Assert.True(result.IsOk)` is a vacuous test — use `Assert.Equal(expected_value, result.Unwrap())`. In Rust, prefer `assert_eq!(actual, expected)` over `assert!(actual == expected)` for better failure output.
    f. If the contract specifies error behavior, assert on the specific error variant — not just "an error was returned."
@@ -82,3 +82,5 @@ Return ONLY valid JSON. The orchestrator will compile/lint your output and re-di
 - **Inventing test helpers in new files**: keep helpers minimal. If you need a helper, put it adjacent in the same file.
 - **(tdd mode) Writing partial implementations in the stub body**: the stub MUST panic / throw. Any real logic at this stage corrupts the red-check and the passing-reason validation.
 - **(tdd mode) Forgetting to write the stub**: a test that doesn't compile is a Phase 3 failure. The verify-new-tests-compile hook will catch you.
+- **(tdd mode) Pre-baking an asserted shape into the stub type**: the stub must contain only what is needed to **compile**. Derives a test needs to type-check (e.g. `#[derive(Serialize)]` so `serde_json::to_value` compiles) are fine — but the shape-determining attributes a test *asserts* (`#[serde(tag = "kind", rename_all = "...")]`, `[JsonConverter]`, a custom `Display`) are **implementation**, added by the implementation-author in green. **Every new test must be RED in the red phase — a serialization / schema-shape guard is NOT exempt.** If a new test passes against your stub, the stub is doing too much: strip the asserted behavior/representation out. A green-in-red test is never validated and may be vacuous.
+- **Testing order/identity preservation with a pre-sorted input**: when a contract says a collection is *passed through* / order-preserved / unsorted, supply the input in a **non-trivial order** (reversed or non-monotonic). A test whose input is already sorted passes by coincidence even against an impl that sorts or reorders — it does not discriminate the contract. (Same trap as asserting a set-equality where order matters.)

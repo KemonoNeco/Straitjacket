@@ -89,9 +89,9 @@ pub fn is_plugin_skill_invocation(command_name: &str) -> bool {
     // We accept both `plugin:skill` form and bare `skill` form for robustness.
     matches!(
         command_name,
-        "regression-tests:regression-tests"
-            | "regression-tests:tdd"
-            | "regression-tests"
+        "straightjacket:regression"
+            | "straightjacket:tdd"
+            | "straightjacket"
             | "tdd"
     )
 }
@@ -285,9 +285,9 @@ mod tests {
 
     #[test]
     fn plugin_skill_invocation_matcher_accepts_namespaced_and_bare() {
-        assert!(is_plugin_skill_invocation("regression-tests:regression-tests"));
-        assert!(is_plugin_skill_invocation("regression-tests:tdd"));
-        assert!(is_plugin_skill_invocation("regression-tests"));
+        assert!(is_plugin_skill_invocation("straightjacket:regression"));
+        assert!(is_plugin_skill_invocation("straightjacket:tdd"));
+        assert!(is_plugin_skill_invocation("straightjacket"));
         assert!(is_plugin_skill_invocation("tdd"));
     }
 
@@ -375,8 +375,8 @@ mod tests {
     #[test]
     fn test_extract_command_name_falls_back_to_top_level_field() {
         // Top-level `command_name` field (no `prompt` wrapper) — exercises the or_else branch.
-        let payload = serde_json::json!({ "command_name": "regression-tests:tdd" });
-        assert_eq!(extract_command_name(&payload), "regression-tests:tdd");
+        let payload = serde_json::json!({ "command_name": "straightjacket:tdd" });
+        assert_eq!(extract_command_name(&payload), "straightjacket:tdd");
     }
 
     #[test]
