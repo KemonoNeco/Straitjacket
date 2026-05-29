@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "audit-finding.schema.json",
+  "title": "AuditFinding",
+  "description": "One issue surfaced by the audit capability (an LLM lens or a mechanical tool-runner). TRANSIENT run-state, not a test work unit. Its fields are aligned to bug-record.schema.json so a confirmed finding can be filed via report-bug with no prose re-derivation: title/summary/expected/actual/suspect_files/suspect_symbol/intended_behavior_seed/severity map 1:1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["lens", "source", "severity", "title", "summary"],
+  "properties": {
+    "lens": {
+      "type": "string",
+      "description": "Which focus scope surfaced this: an LLM lens (latent-bug, dead-code, doc-drift, performance, security, concurrency, error-handling) or a mechanical tool name (clippy-dead-code, cargo-audit, cargo-deny, cargo-geiger, cargo-udeps, dotnet-vulnerable)."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["llm", "mechanical", "corroborated"],
+      "description": "llm = an LLM lens only; mechanical = a tool-runner only; corroborated = an LLM lens and a tool agree (skips refutation, pre-trusted)."
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "description": "Impact. Maps to BugRecord.severity. high-severity findings get 3 refuters instead of 2."
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3,
+      "description": "One-line summary `[Area] symptom`. Reused verbatim as a BugRecord title."
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 10,
+      "description": "1-3 sentence description of the issue. Maps to BugRecord.summary."
+    },
+    "expected": {
+      "type": "string",
+      "description": "What the code SHOULD do. Maps to BugRecord.expected. Optional for report-only lenses (dead-code/doc-drift)."
+    },
+    "actual": {
+      "type": "string",
+      "description": "What the code DOES (the defect). Maps to BugRecord.actual. Optional for report-only lenses."
+    },
+    "suspect_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Repo-relative path(s) the issue lives in. BRIDGE: maps to BugRecord.suspect_files -> WorkUnit.target_file."
+    },
+    "suspect_symbol": {
+      "type": "string",
+      "description": "Language-qualified fn/method/type. BRIDGE: maps to BugRecord.suspect_symbol -> WorkUnit.target_symbol."
+    },
+    "intended_behavior_seed": {
+      "type": "string",
+      "description": "Contract sentence for the correct behavior. BRIDGE: maps to BugRecord.intended_behavior_seed -> WorkUnit.intended_behavior. Required when disposition is bug_record or work_unit_proposal."
+    },
+    "evidence": {
+      "type": "string",
+      "description": "The concrete proof: file:line, the offending snippet, the tool's raw note, or the reasoning that grounds the claim. Refuters judge against this."
+    },
+    "refute_status": {
+      "type": "string",
+      "enum": ["survived", "refuted", "uncertain", "not_refuted"],
+      "description": "Outcome of the refute pass. survived = skeptics could not refute (keep). refuted = quorum refuted (drop, log). uncertain = surfaced, never auto-filed. not_refuted = bypassed refutation (mechanical or corroborated source)."
+    },
+    "refuter_votes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "verdict": { "type": "string", "enum": ["refute", "survive", "uncertain"] },
+          "reason": { "type": "string" }
+        }
+      },
+      "description": "One entry per skeptic that voted on this finding (LLM-only findings)."
+    },
+    "disposition": {
+      "type": "string",
+      "enum": ["report", "bug_record", "work_unit_proposal"],
+      "description": "Where the audit skill routes a survivor: report = cleanup list only (dead-code/doc-drift); bug_record = file via report-bug; work_unit_proposal = emit as data for tdd/triage to lift (audit never spawns authors itself)."
+    },
+    "file": { "type": "string", "description": "Primary file (convenience; usually suspect_files[0])." },
+    "line": { "type": "integer", "description": "Primary line, if known." }
+  }
+}

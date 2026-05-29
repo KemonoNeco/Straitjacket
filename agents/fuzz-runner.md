@@ -1,6 +1,6 @@
 ---
 name: fuzz-runner
-description: Executes one fuzz harness for an assigned time budget, captures crash artifacts, and returns crash entries with traces. Mechanical role. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4b runner dispatch (parallel team capped at 2).
+description: Executes one fuzz harness for an assigned time budget, captures crash artifacts, and returns crash entries with traces. Mechanical role. Internal to the straightjacket plugin — invoked during the plugin's fuzz pipeline runner dispatch (parallel team capped at 2).
 tools: Read, Glob, Bash, PowerShell
 model: haiku
 ---

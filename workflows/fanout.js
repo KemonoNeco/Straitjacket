@@ -6,8 +6,8 @@
 // tasks in parallel within the plugin's cost cap and returns each task's structured
 // result for the main session to merge into work-units.json (Cardinal Rule 1).
 //
-// Used by: tdd stage B (test+stub authoring), tdd stage D (implementation),
-//          straightjacket Phase 3 (test authoring).
+// Used by: tdd authoring + implementation (test+stub, then green — via tdd-cycle), the
+//          mutation skill (mutation-runner team), and the fuzz skill (fuzz-runner team).
 //
 // Bindings via `args` (the diff is NEVER passed; authoring agents Read source themselves):
 //   args.tasks  [{ agentType, prompt, label }]  — one entry per chunk
@@ -23,9 +23,12 @@ export const meta = {
 
 const { tasks = [], cap = 6 } = args
 
-// Author/impl agents return a wrapper of per-unit results; keep the schema permissive so
-// both the test-author shape ({results:[{work_unit_id,status,file_written,...}]}) and the
-// implementation-author shape validate.
+// Two agent shapes ride this stage. Authoring/impl agents return a wrapper of per-unit
+// results ({results:[{work_unit_id,status,file_written,...}]}); the mechanical runners this
+// stage is ALSO reused for (mutation-runner → {surviving_mutants}, fuzz-runner → {crashes})
+// have NO `results` key. So the schema must NOT require `results` (else a runner's valid
+// output is rejected and retried forever). The caller picks `results` (flattened, for
+// authoring) OR `raw` (per-chunk verbatim, for runners) — both are returned.
 const CHUNK_RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: true,
@@ -33,7 +36,6 @@ const CHUNK_RESULT_SCHEMA = {
     results: { type: 'array' },
     notes_to_orchestrator: { type: 'string' },
   },
-  required: ['results'],
 }
 
 phase('Fanout')
@@ -44,6 +46,7 @@ for (let i = 0; i < tasks.length; i += cap) {
   chunkResults = chunkResults.concat((await parallel(batch)).filter(Boolean))
 }
 
-// Flatten per-chunk {results:[...]} into one list for the main session to merge.
+// `results`: per-chunk {results:[...]} flattened for the authoring/impl merge path.
+// `raw`: every chunk verbatim, so runner shapes ({surviving_mutants}/{crashes}) survive.
 const results = chunkResults.flatMap((c) => (c && Array.isArray(c.results)) ? c.results : [])
-return { stage: 'fanout', chunk_count: chunkResults.length, results }
+return { stage: 'fanout', chunk_count: chunkResults.length, results, raw: chunkResults }

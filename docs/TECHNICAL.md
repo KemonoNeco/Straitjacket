@@ -1,4 +1,13 @@
-# Technical guide - `regression-tests-plugin`
+# Technical guide - `straightjacket` plugin
+
+> ⚠️ **Stale — rewrite pending.** This deep-dive predates the **decomposition refactor**
+> (`~/.claude/plans/make-a-plan-instead-calm-pebble.md`): the `regression` skill has been
+> **retired as a command** (its machinery survives as reusable chunks), `tdd` is being
+> consolidated into a `tdd-cycle` workflow, and `audit`/`fuzz`/`mutation`/`debug`/`triage`
+> skills are being decomposed out of the shared engine. Until this document is rewritten
+> against the final architecture, treat **[`docs/STAGES.md`](STAGES.md)** as the source of
+> truth for the agent roster, the workflow stages, the dispatch convention, and the coverage
+> modes. Sections below that name `skills/regression/SKILL.md` or "two skills" are historical.
 
 A contributor-oriented walkthrough of the plugin's architecture, dispatch graphs, file lifecycle, and extension points. Pairs with [`CLAUDE.md`](../CLAUDE.md) (cardinal rules and gotchas) and [`README.md`](../README.md) (end-user install + usage).
 

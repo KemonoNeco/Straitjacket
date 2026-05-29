@@ -9,7 +9,9 @@ pub struct Args {
 pub fn workflow_script(stage: &str) -> Option<&'static str> {
     match stage {
         "adversarial" => Some(include_str!("../../workflows/adversarial.js")),
+        "audit" => Some(include_str!("../../workflows/audit.js")),
         "fanout" => Some(include_str!("../../workflows/fanout.js")),
+        "tdd-cycle" => Some(include_str!("../../workflows/tdd-cycle.js")),
         _ => None,
     }
 }
@@ -22,7 +24,7 @@ pub fn run(args: Args) -> anyhow::Result<()> {
         }
         None => {
             eprintln!(
-                "unknown workflow stage {:?}; known stages are: adversarial, fanout",
+                "unknown workflow stage {:?}; known stages are: adversarial, audit, fanout, tdd-cycle",
                 args.stage
             );
             std::process::exit(1);
@@ -59,7 +61,7 @@ mod tests {
 
     #[test]
     fn test_workflow_script_known_stages_nonempty_and_have_meta() {
-        for stage in &["adversarial", "fanout"] {
+        for stage in &["adversarial", "audit", "fanout", "tdd-cycle"] {
             let result = workflow_script(stage);
             assert!(result.is_some(), "stage {stage:?} should be Some");
             let s = result.unwrap();

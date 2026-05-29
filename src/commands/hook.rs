@@ -83,16 +83,26 @@ pub fn decide_post_agent(subagent_type: &str) -> HookDecision {
     }
 }
 
-/// Returns true if the given slash-command name should trigger preflight on UserPromptExpansion.
+/// Returns true if the given slash-command name should trigger the green-baseline preflight
+/// on UserPromptExpansion. Only skills that REQUIRE a green/buildable tree to be meaningful
+/// are listed: `tdd` (red/green discipline), `mutation` + `fuzz` (need a building target),
+/// and `debug` (operates "from a green state"). Deliberately EXCLUDED: `audit` (read-only
+/// analysis — you often audit *because* the tree is unhealthy), `triage` (a router; the
+/// `debug`/`tdd` skills it invokes carry their own gate), and `report-bug` (capture-fast).
+/// `regression` was retired as a command.
 pub fn is_plugin_skill_invocation(command_name: &str) -> bool {
     // The exact form Claude Code uses for plugin-scoped commands is verified at install time.
     // We accept both `plugin:skill` form and bare `skill` form for robustness.
     matches!(
         command_name,
-        "straightjacket:regression"
-            | "straightjacket:tdd"
-            | "straightjacket"
+        "straightjacket:tdd"
+            | "straightjacket:mutation"
+            | "straightjacket:fuzz"
+            | "straightjacket:debug"
             | "tdd"
+            | "mutation"
+            | "fuzz"
+            | "debug"
     )
 }
 
@@ -285,17 +295,34 @@ mod tests {
 
     #[test]
     fn plugin_skill_invocation_matcher_accepts_namespaced_and_bare() {
-        assert!(is_plugin_skill_invocation("straightjacket:regression"));
-        assert!(is_plugin_skill_invocation("straightjacket:tdd"));
-        assert!(is_plugin_skill_invocation("straightjacket"));
-        assert!(is_plugin_skill_invocation("tdd"));
+        for name in [
+            "straightjacket:tdd",
+            "straightjacket:mutation",
+            "straightjacket:fuzz",
+            "straightjacket:debug",
+            "tdd",
+            "mutation",
+            "fuzz",
+            "debug",
+        ] {
+            assert!(
+                is_plugin_skill_invocation(name),
+                "{name} should trigger the green-baseline preflight"
+            );
+        }
     }
 
     #[test]
-    fn plugin_skill_invocation_matcher_rejects_unrelated() {
+    fn plugin_skill_invocation_matcher_rejects_unrelated_and_non_gated_skills() {
         assert!(!is_plugin_skill_invocation("review"));
         assert!(!is_plugin_skill_invocation(""));
         assert!(!is_plugin_skill_invocation("other-plugin:tdd"));
+        // Retired skill must no longer trigger the preflight.
+        assert!(!is_plugin_skill_invocation("straightjacket:regression"));
+        // Read-only / router / capture skills deliberately skip the green-baseline gate.
+        assert!(!is_plugin_skill_invocation("straightjacket:audit"));
+        assert!(!is_plugin_skill_invocation("straightjacket:triage"));
+        assert!(!is_plugin_skill_invocation("straightjacket:report-bug"));
     }
 
     #[test]

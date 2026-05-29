@@ -65,7 +65,7 @@
     "suspect_files": {
       "type": "array",
       "items": { "type": "string" },
-      "description": "Repo-relative path(s) believed to contain the defect. CONSUMPTION BRIDGE: maps to WorkUnit.target_file when a regression/tdd run lifts this bug into a test work unit. Best-effort; may be empty when unknown.",
+      "description": "Repo-relative path(s) believed to contain the defect. CONSUMPTION BRIDGE: maps to WorkUnit.target_file when a tdd target/fix-mode run lifts this bug into a test work unit. Best-effort; may be empty when unknown.",
       "minItems": 0
     },
     "suspect_symbol": {
@@ -87,7 +87,7 @@
     },
     "discovered_during": {
       "type": "string",
-      "description": "Provenance — how the bug surfaced. Free text, e.g. 'manual', 'straightjacket:regression run <run_id>', 'tdd stage D', 'code review'. Records the 'stay on task' context the skill exists to preserve."
+      "description": "Provenance — how the bug surfaced. Free text, e.g. 'manual', 'straightjacket:tdd run <run_id>', 'tdd stage D', 'code review'. Records the 'stay on task' context the skill exists to preserve."
     },
     "labels": {
       "type": "array",

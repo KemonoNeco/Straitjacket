@@ -1,6 +1,6 @@
 ---
 name: adversarial-happy-path
-description: Critically reviews tests in isolated context for happy-path bias and enumerates uncovered edge cases as new work unit proposals. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the regression skill's Phase 4a. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Critically reviews tests in isolated context for happy-path bias and enumerates uncovered edge cases as new work unit proposals. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straightjacket plugin — invoked during the plugin's adversarial-validation stage. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high
@@ -18,11 +18,11 @@ Your tool inventory deliberately excludes `Bash` and `PowerShell`. You cannot ru
 
 ## Inputs (provided by orchestrator)
 
-- `source_under_test`: post-change source files. **Not the diff. Not the "what changed" framing.** Just the current state of the code (or, in tdd-phase-4, the stubs and any pre-existing source the spec references).
+- `source_under_test`: post-change source files. **Not the diff. Not the "what changed" framing.** Just the current state of the code (or, in `pre_impl` mode, the stubs and any pre-existing source the spec references).
 - `work_units_locked`: JSON array of WorkUnit records with their locked `intended_behavior`, `target_file`, `target_symbol`.
 - `tests_as_written`: contents of every newly written test file, keyed by `output_file_path`.
 - `stack`: `rust` | `csharp`.
-- `mode`: `straightjacket-phase-4a` | `tdd-phase-4` | `tdd-phase-6`. In `tdd-phase-4` the implementation does not exist yet — your enumeration of edge cases compares the test list against the spec's edge-handling expectations rather than against the current code's edge handling. In other modes, the source under test exists and is your reference for what the code actually handles.
+- `mode`: `lock` | `pre_impl` | `post_green`. In `pre_impl` the implementation does not exist yet — your enumeration of edge cases compares the test list against the spec's edge-handling expectations rather than against the current code's edge handling. In other modes, the source under test exists and is your reference for what the code actually handles.
 - **NEVER included**: git diff, "this PR changes", author transcripts. If you see any of these, call it out and continue with what's safe.
 
 ## Procedure

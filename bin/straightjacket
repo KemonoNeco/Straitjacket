@@ -13,6 +13,11 @@ dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 case "$(uname -s)" in
   Linux)  vendor_os="unknown-linux-gnu" ;;
   Darwin) vendor_os="apple-darwin" ;;
+  # git-bash / MSYS2 / Cygwin report MINGW64_NT-*, MSYS_NT-*, CYGWIN_NT-*. MSYS
+  # does NOT apply PATHEXT (the mechanism that would otherwise resolve the .cmd),
+  # so this sh launcher owns the Windows-under-a-POSIX-shell path and dispatches
+  # the .exe itself.
+  MINGW*|MSYS*|CYGWIN*) vendor_os="pc-windows-msvc" ;;
   *) echo "straightjacket: unsupported OS '$(uname -s)'" >&2; exit 1 ;;
 esac
 
@@ -22,7 +27,18 @@ case "$(uname -m)" in
   *) echo "straightjacket: unsupported arch '$(uname -m)'" >&2; exit 1 ;;
 esac
 
-bin="$dir/straightjacket-$cpu-$vendor_os"
+# Windows binaries carry a .exe suffix. Windows-on-ARM runs the x64 build under
+# emulation and only the x64 .exe ships, so fall back to x86_64 unless a native
+# aarch64 Windows binary is actually present (mirrors bin/straightjacket.cmd).
+exe=""
+if [ "$vendor_os" = "pc-windows-msvc" ]; then
+  exe=".exe"
+  if [ "$cpu" = "aarch64" ] && [ ! -e "$dir/straightjacket-aarch64-pc-windows-msvc.exe" ]; then
+    cpu="x86_64"
+  fi
+fi
+
+bin="$dir/straightjacket-$cpu-$vendor_os$exe"
 if [ ! -e "$bin" ]; then
   echo "straightjacket: no prebuilt binary for $cpu-$vendor_os at $bin" >&2
   exit 127

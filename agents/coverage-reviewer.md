@@ -1,6 +1,6 @@
 ---
 name: coverage-reviewer
-description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the straightjacket plugin — invoked by the regression skill's main session during Phase 2.
+description: Enumerates work units for a diff/target scope and locks intended_behavior contracts that all downstream specialists are anchored to. Internal to the straightjacket plugin — invoked by the plugin's skills as the single coverage-planning agent (diff / target / spec modes).
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh
@@ -18,6 +18,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
 - In `diff` mode (straightjacket): full git diff text and the list of changed files (paths and contents).
 - In `target` mode (straightjacket): resolved paths/symbols plus contents of any `CLAUDE.md` files in or above those paths, plus contents of nearby existing test files (for convention reference).
 - In `spec` mode (tdd): the user's spec text inline, plus contents of any `CLAUDE.md` files at the target paths. No existing source-under-test exists for the new behaviors — you are decomposing a specification into work units that will drive both test authoring and stub generation.
+- **Fix mode (a `target`-mode variant, used by `triage`/`debug`):** the orchestrator additionally passes an `intended_behavior_seed` (and usually `suspect_files`/`suspect_symbol`) for a known bug being driven to a fix. The seed is the AUTHORITATIVE contract — see Procedure step 7. This is the one case where you are handed the contract rather than inferring it.
 - `stack`: `rust` | `csharp` | `both`.
 - `run_id`: run identifier.
 - `scaffolded_test_projects`: paths to any C# `*.Tests` projects created in Phase 1 (where C# tests must land).
@@ -62,7 +63,7 @@ Coverage planning is high-leverage and immutable — the `intended_behavior` str
    - **Grounded in the source or spec** (diff mode: in what the change is meant to do; target mode: in docs/code intent; spec mode: in the spec text).
    - **Free of test-implementation language.** No "should call mock with X" — describe the externally observable behavior.
 
-7. **In diff mode, use the diff to infer intent.** The author of the change moved code from A to B for a reason — that reason informs the contract. In target mode, you have no diff; lean on docstrings and CLAUDE.md. In spec mode, the spec is your only intent source — quote it.
+7. **In diff mode, use the diff to infer intent.** The author of the change moved code from A to B for a reason — that reason informs the contract. In target mode, you have no diff; lean on docstrings and CLAUDE.md. In spec mode, the spec is your only intent source — quote it. **In fix mode, the provided `intended_behavior_seed` IS the locked `intended_behavior` for that unit — use it verbatim and do NOT re-infer the current behavior.** The current code is *buggy by assumption*; inferring intent from it would lock the bug instead of the fix. You MAY enumerate additional edge-case units around the seeded behavior, but the seeded contract is immutable.
 
 8. **Return a JSON array of WorkUnit records.** All required fields populated. `status: "pending"`, `round: 0`, `source_of_unit: "coverage_reviewer"`.
 

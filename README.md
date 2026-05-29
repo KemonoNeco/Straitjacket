@@ -1,10 +1,11 @@
 # straightjacket plugin
 
-A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Two skills over one engine: **`regression`** locks current behavior, and **`tdd`** drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. It hardens tests against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch). A companion **`report-bug`** skill captures bugs found along the way into a tracked ledger (and optional GitHub/Jira tickets) that a later run can lift into tests.
+A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Built as **composable chunks** (specialist agents + workflow stages + a Rust CLI) that **thin skills** compose. The flagship **`tdd`** skill drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline; a companion **`report-bug`** skill captures bugs found along the way into a tracked ledger (and optional GitHub/Jira tickets) that a later run can lift into tests. It hardens tests against four failure modes — **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** — using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch).
 
-> Both skills share the same eleven specialist agents + the `straightjacket` Rust CLI; the `tdd` skill adds `implementation-author` for the green phase.
+> All seven skills share one engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straightjacket` Rust CLI — documented in [docs/STAGES.md](docs/STAGES.md). The decomposition retired the old monolithic `regression` command; its machinery survives as those reusable chunks.
 
 * **Looking for usage?** Jump to [Quickstart](#quickstart).
+* **Looking for the shared chunks?** Read [docs/STAGES.md](docs/STAGES.md) for the stage/agent vocabulary.
 * **Looking for design?** Read [docs/TECHNICAL.md](docs/TECHNICAL.md) for the architecture deep-dive.
 * **Contributing to the plugin?** Read [CLAUDE.md](CLAUDE.md) for the load-bearing invariants.
 
@@ -12,9 +13,15 @@ A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Tw
 
 | Slash command | Purpose |
 |---|---|
-| `/straightjacket:regression` | Generate regression tests for recent changes or a target module. **Locks current behavior.** |
 | `/straightjacket:tdd` | Drive a new feature test-first from a spec: red → adversarial-on-red → green → mutation, under a savepoint discipline. |
-| `/straightjacket:report-bug` | Capture a found bug to a tracked local ledger (`.straightjacket/bugs.json`), then optionally mirror it to a GitHub issue and/or Jira ticket. Local-first, opt-in remotes — designed to file a bug *without derailing* the work in progress, and feed it back as test context later. |
+| `/straightjacket:audit` | Find latent defects in source — bugs / dead code / false docs / performance / security / concurrency / error-handling — via isolated LLM lenses + mechanical tool-runners, refute-filtered. Analysis-only (no test-writing). |
+| `/straightjacket:debug` | Root-cause ONE bug from a green tree and return its cause + a reproduction. Diagnoses; does not fix. |
+| `/straightjacket:triage` | Close the loop: route a captured bug → debug (if needed) → tdd fix-mode (failing test for correct behavior + fix) → flip it to `fixed`. |
+| `/straightjacket:fuzz` | Stand-alone fuzzing: write harnesses, run them, mine each crash into a deterministic regression test. |
+| `/straightjacket:mutation` | Stand-alone mutation testing: surface surviving mutants as under-tested-behavior proposals for tdd to cover. |
+| `/straightjacket:report-bug` | Capture a found bug to a tracked local ledger (`.straightjacket/bugs.json`), then optionally mirror it to a GitHub issue and/or Jira ticket. Local-first, opt-in remotes — file a bug *without derailing* the work in progress, and feed it back as test context later. |
+
+All seven skills compose one shared engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straightjacket` CLI — documented in [docs/STAGES.md](docs/STAGES.md).
 
 Shared pipeline shape: **coverage planning → parallel authoring → adversarial team review (+ synthesis) → mutation testing → optional fuzzing**, run as dynamic-Workflow stages when the `Workflow` tool is available, else direct `Agent` dispatch.
 
@@ -31,19 +38,18 @@ claude plugin details straightjacket@straightjacket
 # 3. Run inside any Rust or C# repo with a clean baseline
 cd ~/path/to/my-rust-project
 claude
-> /straightjacket:regression          # diff mode (vs. origin/main)
-> /straightjacket:regression src/parser.rs   # target mode
+> /straightjacket:tdd "add a function that parses a header and rejects inputs over 4 KiB"
 ```
 
-The skill writes tests directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run).
+The skill writes tests (and, in tdd, implementation) directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run); the bug ledger at `.straightjacket/bugs.json` is tracked/committed.
 
 ## Agents
 
-Eleven specialist agents (plus `implementation-author` for the tdd green phase) make up the workflow:
+The specialist agents that make up the workflow:
 
 | Agent | Model | Role |
 |---|---|---|
-| `coverage-reviewer` | opus | Synthesis: diff/target → locked work-unit contracts |
+| `coverage-reviewer` | opus | Synthesis: diff/target/spec → locked work-unit contracts |
 | `unit-test-author` | sonnet | Parallel team, unit-level test code |
 | `integration-test-author` | opus | Reasoning-heavy boundary tests |
 | `adversarial-vacuousness` | opus | Specialist: vacuous tests + test-mutation patterns |
@@ -53,14 +59,15 @@ Eleven specialist agents (plus `implementation-author` for the tdd green phase) 
 | `mutation-runner` | haiku | Mechanical: cargo-mutants / dotnet-stryker |
 | `fuzz-harness-author` | opus | Reasoning-heavy fuzz harness design |
 | `fuzz-runner` | haiku | Mechanical: cargo-fuzz / SharpFuzz |
+| `implementation-author` | opus | Fills stubs (tdd green) or fixes buggy source (fix mode); never edits tests |
 
-See [docs/TECHNICAL.md#agent-dispatch-graph](docs/TECHNICAL.md#agent-dispatch-graph) for the full tool inventory and concurrency limits.
+The `audit-<lens>` finders + `audit-runner`/`audit-refuter`/`audit-synthesis` (for `audit`) and `root-cause-analyst` (for `debug`) are added as those skills land. See [docs/STAGES.md#specialist-agent-roster](docs/STAGES.md#specialist-agent-roster) for the full tool inventory and concurrency limits.
 
 ## Hooks
 
 `hooks/hooks.json` enforces invariants automatically:
 
-* **`UserPromptExpansion`** on the plugin's skill names → runs `straightjacket preflight` (detect-stack + baseline-check + lint-check). Blocks the skill if the baseline is red.
+* **`UserPromptExpansion`** on the green-baseline skill names (`tdd`, `mutation`, `fuzz`, `debug`) → runs `straightjacket hook preflight`, the gate point for a clean baseline. (`audit` is read-only and `triage` is a router, so they skip it.)
 * **`PreToolUse`** on the `Agent` tool → scans prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before adversarial specialists spawn (defense-in-depth on top of their tool restrictions).
 * **`PostToolUse`** on the `Agent` tool → auto-runs `verify-new-tests-compile` after each test-author returns. Blocks with diagnostics for retry.
 
@@ -82,6 +89,7 @@ straightjacket reproducer-to-test --repro <p> --target <name> --stack <s> --work
 straightjacket run-new-tests   --repo-root <p> --work-units <p> --stack <s> [--expect=fail]
 straightjacket preflight       (combined: detect-stack + baseline-check + lint-check)
 straightjacket hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
+straightjacket workflow-script <stage>   (emits the fanout/adversarial stage scripts)
 ```
 
 Pre-built per-platform binaries are committed under `bin/` (named by Rust target triple, ~3 MB each), so downstream consumers do **not** need a Rust toolchain. You always invoke `straightjacket`; two launcher shims dispatch to the right binary for the host:
@@ -98,23 +106,23 @@ Pre-built per-platform binaries are committed under `bin/` (named by Rust target
 
 **For basic use of the plugin** (skill orchestration + authoring + adversarial review): the shipped `bin/` binaries are the only requirement - no toolchain needed.
 
-**For full multi-phase regression testing on a Rust project under test**:
+**For the full multi-phase workflow on a Rust project under test**:
 
 ```bash
-cargo install cargo-mutants --locked     # Phase 4a mutation testing (else static-only)
-cargo install cargo-fuzz --locked        # Phase 4b fuzz harness/runners
+cargo install cargo-mutants --locked     # mutation testing (else static-only)
+cargo install cargo-fuzz --locked        # fuzz harness/runners
 rustup toolchain install nightly         # cargo-fuzz needs nightly for libFuzzer
-cargo install cargo-llvm-cov --locked    # Phase 5 coverage delta
+cargo install cargo-llvm-cov --locked    # coverage delta
 ```
 
 > Cosmetic note: `cargo fuzz --version` panics under some Windows consoles because cargo-fuzz v0.13.1 pulls in `is-terminal v0.4.1` (an old range-out-of-bounds bug in terminal-width probing). `cargo fuzz init` and `cargo fuzz run` are unaffected.
 
-**For full multi-phase regression testing on a C# project under test**:
+**For the full multi-phase workflow on a C# project under test**:
 
 ```bash
-dotnet tool install -g dotnet-stryker                  # Phase 4a mutation testing
-dotnet tool install -g SharpFuzz.CommandLine           # Phase 4b fuzzing
-dotnet tool install -g dotnet-reportgenerator-globaltool   # Phase 5 coverage delta
+dotnet tool install -g dotnet-stryker                  # mutation testing
+dotnet tool install -g SharpFuzz.CommandLine           # fuzzing
+dotnet tool install -g dotnet-reportgenerator-globaltool   # coverage delta
 ```
 
 The skills shell out to these tools when present and degrade gracefully when absent. Tooling status is recorded in `<run_id>/tooling.json` at the start of every run.
@@ -140,7 +148,7 @@ claude plugin install straightjacket@straightjacket
 claude --plugin-dir ~/Code/regression-tests-plugin
 ```
 
-Then invoke `/straightjacket:regression` in any Rust or C# project's git working tree.
+Then invoke `/straightjacket:tdd` in any Rust or C# project's git working tree.
 
 ## Build from source
 
