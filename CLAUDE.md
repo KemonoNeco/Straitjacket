@@ -54,12 +54,23 @@ After bootstrap:
 
 ### Shipping the binary
 
+The committed binaries are **per-platform**, named by Rust target triple, and dispatched by two launcher shims. Don't invoke a raw `bin/straightjacket-*` directly — call `straightjacket` (the launcher picks the host's binary).
+
+- `bin/straightjacket` — POSIX `sh` launcher (mode 100755, LF-locked via `.gitattributes`); `uname`-detects OS/arch and `exec`s `straightjacket-<triple>`.
+- `bin/straightjacket.cmd` — Windows launcher; `%PROCESSOR_ARCHITECTURE%`-detects arch and runs `straightjacket-<triple>.exe` (ARM64 falls back to the x64 build under emulation).
+- `bin/straightjacket-<triple>[.exe]` — the actual binaries, e.g. `straightjacket-x86_64-pc-windows-msvc.exe`, `straightjacket-aarch64-apple-darwin`.
+
+> Why both surfaces still work unchanged: hooks call `${CLAUDE_PLUGIN_ROOT}/bin/straightjacket` (extensionless → resolves the sh launcher on Unix, and `.cmd` via PATHEXT on Windows); skills call bare `straightjacket` on PATH (same resolution). Neither references a triple.
+
+**Cross-platform builds are CI's job.** `.github/workflows/build-binaries.yml` cross-compiles the five targets natively (one runner per target — no `cross`), then commits the refreshed binaries back into `bin/` on `workflow_dispatch` or a `v*` tag (and attaches them to a GitHub Release on tag). To refresh the binaries, dispatch that workflow or cut a tag — don't hand-build all five. A local single-target build for quick iteration:
+
 ```bash
-cargo build --release
-cp target/release/straightjacket.exe bin/straightjacket.exe
+# Windows x64 example (uses the MSVC wrapper from "Toolchain bootstrap"):
+cmd //c scripts\cargo-msvc.cmd build --release
+cp target/release/straightjacket.exe bin/straightjacket-x86_64-pc-windows-msvc.exe
 ```
 
-- `bin/straightjacket.exe` IS committed (~3MB) - downstream plugin consumers don't have a Rust toolchain
+- `bin/straightjacket-<triple>[.exe]` ARE committed (~3MB each) - downstream plugin consumers don't have a Rust toolchain
 - `target/` is gitignored
 
 ### LSP integration
@@ -88,7 +99,7 @@ C# equivalents (for dogfooding the C# code path of this plugin, not the plugin i
 
 Six layers, each with a different cardinal rule:
 
-1. **`bin/straightjacket.exe`** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
+1. **`bin/straightjacket` (launcher → `bin/straightjacket-<triple>`)** — the Rust CLI. Pure-data helpers (parsers, walkers, hashers) live as `pub fn` in `src/commands/*.rs` alongside a `pub fn run(args: Args) -> anyhow::Result<()>` shell. Split is enforced by testability: pure helpers get unit tests; `run` is the thin glue that calls helpers + prints JSON + sets exit code. When porting/extending a subcommand, extract a pure-data helper first, then write the test, then the `run` glue.
 
 2. **`src/common/`** — shared infrastructure used by multiple commands. **`walk.rs`** uses `WalkDir::filter_entry` for descent-time directory pruning (the load-bearing perf invariant: a post-walk `.filter()` still descends into `target/` and reads every file). **`subprocess.rs::run_with_timeout`** uses (a) `Command::env` for per-child env (`MSBUILDDISABLENODEREUSE=1` etc. — never `std::env::set_var`, which mutates the parent process) and (b) `taskkill /F /T /PID` on Windows for process-tree kill, because plain `child.kill()` orphans grandchildren that inherit the stdio pipes (this is exactly the same hazard the env vars work around for MSBuild). **`json_io.rs`** writes pretty-printed JSON with a trailing newline. **`cargo_target.rs`** holds `resolve_cargo_target` (pure manifest-paths → `CargoTarget`: a root-level `Cargo.toml` → run with `--workspace`; a single nested crate → run from that crate's dir *without* `--workspace`; multiple nested with no root → `Ambiguous`, never a silent pick) and `cargo_invocation` (maps a `CargoTarget` + base cargo args → cwd + argv, inserting `--workspace` only for a real workspace). `baseline_check`/`lint_check`/`run_new_tests` use them to run cargo from the correct directory on nested-crate layouts instead of a blind `--workspace` from `repo_root`.
 
@@ -120,7 +131,7 @@ The Rust binary is also the *hook executor* — `straightjacket hook <event>` re
 
 ## Git workflow notes
 
-- `bin/straightjacket.exe` is committed (~3MB Windows binary). Don't gitignore it.
+- The per-platform `bin/straightjacket-<triple>[.exe]` binaries (~3MB each) plus the `bin/straightjacket` / `bin/straightjacket.cmd` launchers are committed. Don't gitignore them. `.gitattributes` keeps the sh launcher LF-only (a CRLF shebang breaks `/bin/sh`) and marks the binaries `binary`.
 - `target/`, `.claude-regression/` (per-run state from the skills themselves), and `2026-*-*.txt` (session transcript files) are gitignored.
 - The repo uses `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` in commits where Claude Code contributed.
 
