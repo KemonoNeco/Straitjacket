@@ -20,7 +20,7 @@ You operate in **isolated context** and you **Read the assigned scope yourself**
 - `stack`: `rust` | `csharp`.
 - `lens`: your own lens name — `latent-bug`. Emit this exact (un-prefixed) token in every finding's `lens` field.
 - `schema_path`: path to `schemas/audit-finding.schema.json`. Every finding you emit MUST conform to it.
-- **NEVER included**: a git diff, a "this PR changes" framing, "what changed" notes, or author transcripts. If you see any of these in your prompt, the orchestrator built it wrong — note it in `notes_to_orchestrator` and continue reviewing the full source as it stands.
+- **NEVER included**: a git diff, a "this PR changes" framing, "what changed" notes, or author transcripts. If you see any of these in your prompt, the orchestrator built it wrong — note it in `notes_to_synthesis` and continue reviewing the full source as it stands.
 
 ## Procedure
 
@@ -71,7 +71,7 @@ Return exactly:
     "diff_or_transcript_leaked": false,
     "notes": "confirm you operated on full source you Read yourself and received no diff / 'what changed' framing"
   },
-  "notes_to_orchestrator": "optional"
+  "notes_to_synthesis": "optional"
 }
 ```
 

@@ -71,7 +71,7 @@ Return exactly:
     "diff_or_transcript_leaked": false,
     "notes": "confirm you operated on full source you Read yourself and received no diff / 'what changed' framing"
   },
-  "notes_to_orchestrator": "optional"
+  "notes_to_synthesis": "optional"
 }
 ```
 

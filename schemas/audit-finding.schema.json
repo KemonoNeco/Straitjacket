@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/KemonoNeco/regression-tests-plugin/schemas/audit-finding.schema.json",
+  "$id": "audit-finding.schema.json",
   "title": "AuditFinding",
   "description": "One issue surfaced by the audit capability (an LLM lens or a mechanical tool-runner). TRANSIENT run-state, not a test work unit. Its fields are aligned to bug-record.schema.json so a confirmed finding can be filed via report-bug with no prose re-derivation: title/summary/expected/actual/suspect_files/suspect_symbol/intended_behavior_seed/severity map 1:1.",
   "type": "object",

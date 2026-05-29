@@ -161,10 +161,18 @@ exists yet, so the reviewer also pre-assigns `target_stub_path` (where the `unim
 5. **Parallel spawns go in a single message** (Agent path) / one `parallel()` batch (workflow path).
 6. **JSON parse failures:** retry once with a "return only valid JSON matching <schema>" prefix, then abort that unit.
 
+## Severity axes
+
+Two deliberate severity scales coexist - this is **by design, not drift**:
+
+- **Adversarial *test-validity* findings** use a 3-level scale: `low | medium | high`. A test is never "critical" - the axis measures *how badly a test fails to constrain behavior*.
+- **Audit *defect-impact* + bug-record findings** use a 4-level scale: `critical | high | medium | low`. The axis is *real-world impact*; it maps 1:1 onto `BugRecord.severity` and drives the audit refuter count (higher severity → more skeptics).
+
 ## Run-state layout
 
 All per-run artifacts live under `<repo>/.claude-regression/<run_id>/` (run_id =
 `YYYYMMDDThhmmss-<4hex>`), gitignored: `work-units.json`, `tooling.json`, `test-snapshot.json`,
-`state.json`, logs, `quarantine/`, `staged-tests/`. The **bug ledger** at
+`state.json`, logs, `quarantine/`, `staged-tests/`, `audit-findings.json` (the audit skill's
+transient findings - distinct from `work-units.json`). The **bug ledger** at
 `<repo>/.straightjacket/bugs.json` is the exception - it is **tracked/committed**, the durable
 hand-off between `report-bug`, `audit`, `triage`, and a later fix-mode run.

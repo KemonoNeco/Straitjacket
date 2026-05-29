@@ -34,7 +34,7 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 
 1. **Partition** the target into runner tasks by `--scope` (one task per file/module/project).
 2. **Run the mutation team — capped at 2-3.** Workflow path: the `fanout` stage (`tasks` = one `mutation-runner` per target, `cap: 3`); read the runners' shape off the stage's `raw` (each returns `{surviving_mutants:[...]}`, not `results`). Agent path: spawn the runners in one message. Each returns its mutation score + surviving mutants (file, line, function, original, mutated, mutator).
-3. **Turn survivors into proposals.** For each surviving mutant, infer the under-tested behavior class it exposes and emit a work-unit proposal: `{ intended_behavior, target_file, target_symbol, kind }`. Dedupe proposals that target the same behavior. If `--file-proposals`, write them to `work-units.json` as `pending`, `source_of_unit: "mutation"`, for a `tdd` run to author.
+3. **Turn survivors into proposals.** For each surviving mutant, infer the under-tested behavior class it exposes and emit a work-unit proposal: `{ intended_behavior, target_file, target_symbol, kind }`. Dedupe proposals that target the same behavior. If `--file-proposals`, write them to `work-units.json` as `pending`, `source_of_unit: "mutation_runner"`, for a `tdd` run to author.
 
 ## Final summary (present verbatim)
 

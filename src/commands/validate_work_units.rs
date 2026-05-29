@@ -178,7 +178,12 @@ fn validate_unit(unit: &Value, index: usize, errors: &mut Vec<UnitError>) {
     check_string_enum(
         obj,
         "source_of_unit",
-        &["coverage_reviewer", "adversarial_reviewer", "fuzz_runner"],
+        &[
+            "coverage_reviewer",
+            "adversarial_reviewer",
+            "fuzz_runner",
+            "mutation_runner",
+        ],
         &push,
         errors,
     );
@@ -401,6 +406,19 @@ mod tests {
         assert!(
             report.errors.iter().any(|e| e.message.contains("source_of_unit")),
             "expected an error referencing 'source_of_unit', got: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn source_of_unit_mutation_runner_is_valid() {
+        let mut unit = valid_unit();
+        unit["source_of_unit"] = json!("mutation_runner");
+        let input = json!([unit]);
+        let report = validate_work_units(&input);
+        assert!(
+            !report.errors.iter().any(|e| e.message.contains("source_of_unit")),
+            "mutation_runner must be accepted as a valid source_of_unit, but got errors: {:?}",
             report.errors
         );
     }

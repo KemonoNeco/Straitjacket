@@ -87,7 +87,7 @@
     },
     "source_of_unit": {
       "type": "string",
-      "enum": ["coverage_reviewer", "adversarial_reviewer", "fuzz_runner"],
+      "enum": ["coverage_reviewer", "adversarial_reviewer", "fuzz_runner", "mutation_runner"],
       "description": "Which agent created this work unit. Useful for auditing and for iteration logic.",
       "default": "coverage_reviewer"
     }

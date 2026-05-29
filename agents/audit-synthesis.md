@@ -14,7 +14,7 @@ You work primarily from the votes and the findings you are handed. Unlike `adver
 
 ## Inputs (provided by orchestrator)
 
-- `refuter_votes`: the `audit-refuter`'s output — one verdict (`refute`/`survive`/`uncertain`) + reason per LLM finding, keyed by finding title.
+- `refuter_votes`: an array of per-skeptic vote sets — N skeptics each voted over the FULL finding set; you aggregate them. Each vote carries a verdict (`refute`/`survive`/`uncertain`) + reason, keyed by finding title.
 - `llm_findings`: the `source: "llm"` findings the votes refer to (so you can attach verdicts and read the bridge fields).
 - `mechanical_findings`: the flattened findings from the `audit-runner` team, each `source: "mechanical"`. These bypass refutation — they are pre-trusted.
 - `stack`: `rust` | `csharp`.
@@ -22,15 +22,15 @@ You work primarily from the votes and the findings you are handed. Unlike `adver
 
 ## Procedure
 
-1. **Attach verdicts.** Join each `llm_finding` to its `refuter_votes` entry by title (+ `file:line` if needed). A finding with no matching vote is treated as `uncertain` (and noted) — never silently kept.
+1. **Aggregate the skeptics' votes per finding.** Match each `llm_finding` against every skeptic's vote set on the finding's title (plus `file:line` if titles repeat). KEEP a finding when **>= half the skeptics voted `survive`**, otherwise route it to refuted (or `uncertain` if the votes are split with none confirming). A finding with no matching vote in any set is treated as `uncertain` (and noted) — never silently kept.
 
 2. **Dedupe into corroboration.** When an LLM finding and a mechanical finding describe the **same defect at the same location** (same `suspect_files`/`suspect_symbol`, same root issue — e.g., the `dead-code` lens and `clippy-dead-code` both flag the same item), merge them into ONE finding with `source: "corroborated"` and `refute_status: "not_refuted"`. Corroborated findings are **pre-trusted** — they skip the refute quorum regardless of how the LLM half was voted.
 
-3. **Apply the refute quorum to the remaining LLM-only findings.**
-   - `survived` (skeptics could not refute) → keep. Set `refute_status: "survived"`.
-   - `refuted` (the quorum refuted it) → drop from confirmed; record it in `refuted_findings` with the refuter's reason and `refute_status: "refuted"`. Do not file it.
-   - `uncertain` → put in `uncertain_findings`, surfaced but **never auto-filed**. Set `refute_status: "uncertain"`.
-   - (The quorum size is the refuter's concern — a high-severity finding gets more refuters per the schema; you read the verdict it produced, you don't re-run it.)
+3. **Apply the refute quorum to the remaining LLM-only findings** using the per-finding tally from step 1.
+   - `survived` (>= half the skeptics voted `survive`) → keep. Set `refute_status: "survived"`.
+   - `refuted` (the quorum did not reach the survive threshold) → drop from confirmed; record it in `refuted_findings` with the skeptics' reasons and `refute_status: "refuted"`. Do not file it.
+   - `uncertain` (votes split with none confirming) → put in `uncertain_findings`, surfaced but **never auto-filed**. Set `refute_status: "uncertain"`.
+   - (You own the tally: you receive the raw per-skeptic vote sets and aggregate them yourself. The number of skeptics per finding is set upstream — a high-severity finding gets more refuters per the schema — but the count and the survive-threshold decision are yours to compute.)
 
 4. **Keep all mechanical and corroborated findings** in `confirmed_findings` with `refute_status: "not_refuted"`.
 
@@ -84,6 +84,7 @@ Return exactly:
   ],
   "isolation_check": {
     "diff_or_transcript_leaked": false,
+    "lenses_isolation_confirmed": true,
     "notes": "confirm you synthesized from votes + findings and read source only to fill bridge fields"
   },
   "notes_to_orchestrator": "optional",
