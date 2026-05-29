@@ -1,5 +1,5 @@
 #![no_main]
-//! Fuzz harness for `straightjacket::commands::run_new_tests::rust_test_status`.
+//! Fuzz harness for `straitjacket::commands::run_new_tests::rust_test_status`.
 //!
 //! `rust_test_status` builds a `Regex` from a user-controlled `name` field
 //! using `regex::escape` + `unwrap()`. The unwrap is exactly the place
@@ -16,7 +16,7 @@
 //!   - On empty `output`, status must be `Unknown` (no test results to scan).
 
 use libfuzzer_sys::fuzz_target;
-use straightjacket::commands::run_new_tests::{rust_test_status, TestStatus};
+use straitjacket::commands::run_new_tests::{rust_test_status, TestStatus};
 
 fuzz_target!(|input: (&str, &str)| {
     let (output, name) = input;

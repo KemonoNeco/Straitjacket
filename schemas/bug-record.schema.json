@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "bug-record.schema.json",
   "title": "BugRecord",
-  "description": "A single captured bug, persisted in the consumer repo's tracked ledger at .straightjacket/bugs.json (wrapper shape {\"bugs\": [BugRecord, ...]}). Written by the report-bug skill the moment a bug is found, BEFORE any remote mirroring, so a bug is never lost if a backend is absent or the host workflow is interrupted. The ledger is meant to be committed. Three fields form the bridge to the straightjacket coverage-reviewer so a later regression/tdd run can lift a bug into a test work unit without prose-parsing: suspect_files -> WorkUnit.target_file, suspect_symbol -> WorkUnit.target_symbol, intended_behavior_seed -> WorkUnit.intended_behavior.",
+  "description": "A single captured bug, persisted in the consumer repo's tracked ledger at .straitjacket/bugs.json (wrapper shape {\"bugs\": [BugRecord, ...]}). Written by the report-bug skill the moment a bug is found, BEFORE any remote mirroring, so a bug is never lost if a backend is absent or the host workflow is interrupted. The ledger is meant to be committed. Three fields form the bridge to the straitjacket coverage-reviewer so a later regression/tdd run can lift a bug into a test work unit without prose-parsing: suspect_files -> WorkUnit.target_file, suspect_symbol -> WorkUnit.target_symbol, intended_behavior_seed -> WorkUnit.intended_behavior.",
   "type": "object",
   "required": [
     "id",
@@ -87,7 +87,7 @@
     },
     "discovered_during": {
       "type": "string",
-      "description": "Provenance — how the bug surfaced. Free text, e.g. 'manual', 'straightjacket:tdd run <run_id>', 'tdd stage D', 'code review'. Records the 'stay on task' context the skill exists to preserve."
+      "description": "Provenance — how the bug surfaced. Free text, e.g. 'manual', 'straitjacket:tdd run <run_id>', 'tdd stage D', 'code review'. Records the 'stay on task' context the skill exists to preserve."
     },
     "labels": {
       "type": "array",

@@ -46,8 +46,8 @@ summary (audit-after, not pre-empt). Your residual role is thin: start from a kn
    **green** (the `UserPromptExpansion` preflight gate fires for `tdd`).
 2. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.claude-regression/<run_id>/`;
    append `.claude-regression/` to `.gitignore` if absent.
-3. `straightjacket detect-stack --repo-root <repo_root>` → `stack` (+ `cargo_target`).
-4. `straightjacket snapshot-tests --repo-root <repo_root> --out-file <run_id>/test-snapshot.json`.
+3. `straitjacket detect-stack --repo-root <repo_root>` → `stack` (+ `cargo_target`).
+4. `straitjacket snapshot-tests --repo-root <repo_root> --out-file <run_id>/test-snapshot.json`.
 5. Probe tooling (cargo-mutants / dotnet-stryker) → `<run_id>/tooling.json`.
 6. Scaffold C# `*.Tests` projects if needed.
 
@@ -55,7 +55,7 @@ summary (audit-after, not pre-empt). Your residual role is thin: start from a kn
 
 **Capability check:** inspect your own tools for one named `Workflow`.
 
-- **Present →** `straightjacket workflow-script tdd-cycle` (Bash) emits the script; capture it
+- **Present →** `straitjacket workflow-script tdd-cycle` (Bash) emits the script; capture it
   verbatim and call `Workflow({script: <captured>, args})` with:
   - `spec`, `stack`, `repoRoot`, `outputDir` (`<repo_root>/.claude-regression/<run_id>`),
     `workUnitsPath` (`outputDir + "/work-units.json"`), `testSnapshotPath`,
@@ -75,7 +75,7 @@ no_mutation_audit, ready_to_commit, error }`.
 1. **`error` set** (e.g. a `nothing_to_run` gate, name-survival break) → do NOT commit; surface the
    error verbatim and stop. A zero-check is a failure, not a pass.
 2. **`surfaced_bugs` non-empty** → ESCALATE each in the summary. For any you will not fix in this
-   run, invoke `straightjacket:report-bug` (map `target_file`/`target_symbol`/`intended_behavior_seed`
+   run, invoke `straitjacket:report-bug` (map `target_file`/`target_symbol`/`intended_behavior_seed`
    → the bug's `suspect_files`/`suspect_symbol`/`intended_behavior_seed`). Never weaken a test to
    clear one.
 3. **`ready_to_commit` true and not `--no-commit`** → run the new tests once more to confirm green,
@@ -107,5 +107,5 @@ no_mutation_audit, ready_to_commit, error }`.
 - The cycle is mostly Opus turns (coverage, authors, the adversarial stack, implementation) plus
   Haiku runners (mutation, gate-runner); it iterates up to `--max-rounds`.
 - All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
-  `<repo>/.straightjacket/bugs.json` is tracked/committed. The `straightjacket` CLI is on `PATH`
+  `<repo>/.straitjacket/bugs.json` is tracked/committed. The `straitjacket` CLI is on `PATH`
   via the plugin's `bin/`.

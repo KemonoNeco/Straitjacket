@@ -1,13 +1,13 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
-  "name": "straightjacket",
-  "description": "Single-plugin marketplace for the straightjacket multi-agent test-engineering plugin.",
+  "name": "straitjacket",
+  "description": "Single-plugin marketplace for the straitjacket multi-agent test-engineering plugin.",
   "owner": {
     "name": "KemonoNeco"
   },
   "plugins": [
     {
-      "name": "straightjacket",
+      "name": "straitjacket",
       "description": "Multi-agent test-engineering plugin built as composable chunks - specialist agents, workflow stages, and a Rust CLI that thin skills compose. Live skills: `tdd` (new features test-first: spec → red → adversarial-on-red → green → mutation, under a savepoint discipline) and `report-bug` (capture defects to a tracked ledger, opt-in mirror to GitHub/Jira); the same engine composes into further skills (audit, fuzz, mutation, debug, triage). Fan-out phases run as dynamic-Workflow stages when available (else direct Agent dispatch). Supports Rust and C#.",
       "author": {
         "name": "KemonoNeco"

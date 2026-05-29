@@ -1,6 +1,6 @@
 // audit.js — the source-audit workflow stage.
 //
-// Emitted by `straightjacket workflow-script audit` and run via the Workflow tool. Finds
+// Emitted by `straitjacket workflow-script audit` and run via the Workflow tool. Finds
 // latent defects in SOURCE (not tests): correctness/latent bugs, dead code, doc-drift,
 // performance, security, concurrency, error-handling — via isolated LLM lenses AND mechanical
 // tool-runners — then a REFUTE pass drops the false positives before anything is reported.
@@ -70,9 +70,9 @@ for (const wave of chunk(mechanicalTools, 3)) {
     agent([
       `You are the audit-runner. Run exactly one mechanical static-analysis tool and return its JSON verbatim.`,
       `tool: ${tool}`, `stack: ${stack}`, `repo_root: ${repoRoot}`,
-      `Run: straightjacket audit-run --tool ${tool} --stack ${stack} --repo-root ${repoRoot}`,
+      `Run: straitjacket audit-run --tool ${tool} --stack ${stack} --repo-root ${repoRoot}`,
       `Return the audit-run JSON ({tool, available, nothing_scanned, findings}).`,
-    ].join('\n'), { agentType: 'straightjacket:audit-runner', schema: RUNNER_SCHEMA, phase: 'Mechanical', label: `tool:${tool}` })))
+    ].join('\n'), { agentType: 'straitjacket:audit-runner', schema: RUNNER_SCHEMA, phase: 'Mechanical', label: `tool:${tool}` })))
   mechanicalFindings = mechanicalFindings.concat(
     r.filter(Boolean).flatMap((res) => (res.findings || []).map((f) => ({ ...f, source: 'mechanical' }))))
 }
@@ -91,7 +91,7 @@ for (const wave of chunk(lenses, 6)) {
       `Emit findings per schemas/audit-finding.schema.json with source:"llm" and lens:"${lens}".`,
       `Fill the bridge fields (suspect_files/suspect_symbol/intended_behavior_seed) for any bug_record/work_unit_proposal.`,
       `Return ONLY JSON per your output contract, incl. isolation_check.`,
-    ].join('\n'), { agentType: `straightjacket:audit-${lens}`, schema: LENS_SCHEMA, phase: 'Lenses', label: `lens:${lens}` })))
+    ].join('\n'), { agentType: `straitjacket:audit-${lens}`, schema: LENS_SCHEMA, phase: 'Lenses', label: `lens:${lens}` })))
   for (const res of r.filter(Boolean)) {
     lensCoverage.push({ lens: res.lens, count: (res.findings || []).length, nothing_scanned: !!res.nothing_scanned })
     llmFindings = llmFindings.concat((res.findings || []).map((f) => ({ ...f, source: f.source || 'llm' })))
@@ -112,7 +112,7 @@ if (llmFindings.length) {
       `findings:`, JSON.stringify(claimsOnly, null, 2),
       `Key each vote by the finding's "title" (add its file:line if titles repeat) as finding_ref — NOT the array index — so audit-synthesis can join your votes to the findings.`,
       `Return ONLY JSON: {"votes":[{"finding_ref":"<finding title>","verdict":"refute|survive|uncertain","reason":"..."}], "isolation_check":{...}}.`,
-    ].join('\n'), { agentType: 'straightjacket:audit-refuter', schema: REFUTER_SCHEMA, phase: 'Refute', label: `refuter:${k + 1}` })))
+    ].join('\n'), { agentType: 'straitjacket:audit-refuter', schema: REFUTER_SCHEMA, phase: 'Refute', label: `refuter:${k + 1}` })))
   refuterVotes = votes.filter(Boolean)
 }
 
@@ -129,7 +129,7 @@ const synthesis = await agent([
   `refuter_votes: ${JSON.stringify(refuterVotes)}`,
   `mechanical_findings: ${JSON.stringify(mechanicalFindings)}`,
   `Return ONLY JSON: {confirmed_findings, refuted_findings, uncertain_findings, synthesis_status}.`,
-].join('\n'), { agentType: 'straightjacket:audit-synthesis', schema: SYNTH_SCHEMA, phase: 'Synthesis', label: 'audit-synthesis' })
+].join('\n'), { agentType: 'straitjacket:audit-synthesis', schema: SYNTH_SCHEMA, phase: 'Synthesis', label: 'audit-synthesis' })
 
 return {
   stage: 'audit',

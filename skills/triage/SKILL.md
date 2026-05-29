@@ -8,8 +8,8 @@ description: "Close the loop on a captured local bug: route a ledger record → 
 ## Cardinal Rule 0 — YOU ARE THE ROUTER + THE SINGLE LEDGER WRITER
 
 You — the main session — **route a captured bug through debug and fix sub-flows and own every
-write to the bug ledger** (`<repo>/.straightjacket/bugs.json`). You operate on *existing* records;
-you do not create them (a newly-found inline bug is captured by `straightjacket:report-bug`, not
+write to the bug ledger** (`<repo>/.straitjacket/bugs.json`). You operate on *existing* records;
+you do not create them (a newly-found inline bug is captured by `straitjacket:report-bug`, not
 here). The diagnosis and fix happen in the sub-flows; you sequence them and record dispositions.
 
 - **You never write test or implementation code yourself** — that's the multi-agent collapse this
@@ -35,7 +35,7 @@ workflow, the dispatch convention, and the run-state layout — lives once in
 ## Preflight (this session)
 
 1. Confirm a git repo (else abort); resolve `repo_root`.
-2. Read `<repo>/.straightjacket/bugs.json`; select the target `open`/`mirrored` record(s) per the
+2. Read `<repo>/.straitjacket/bugs.json`; select the target `open`/`mirrored` record(s) per the
    args, capped at `--max`. No record selected → report and stop.
 3. **No green-baseline gate here** — triage is a router; the **debug** and **fix-mode** sub-flows
    each carry their own green preflight (`verify-tree-clean`), so the gate fires where the work
@@ -73,19 +73,19 @@ the engine's — reuse the **`tdd-cycle`** workflow (capability-check for `Workf
    test goes RED against the buggy code and GREEN after the fix do you flip the record.
 
 Everything between those seams is *the same as a `tdd` run, seeded from the ledger*: authors write
-the failing test → `straightjacket run-new-tests --expect fail` (it must FAIL against the buggy
+the failing test → `straitjacket run-new-tests --expect fail` (it must FAIL against the buggy
 source; branch loudly on `nothing_to_run` — a zero-check is a failure, not a pass) → adversarial
 `pre_impl` on the RED test → `implementation-author` **fixes the real source, never the test** →
 `run-new-tests --expect pass` + name-survival + `verify-no-test-mutation` → adversarial `post_green`
 (+ optional mutation). On QA'd green:
 
-- `straightjacket bug-status --repo-root <repo_root> --id <id> --set fixed [--note <test names>]`
+- `straitjacket bug-status --repo-root <repo_root> --id <id> --set fixed [--note <test names>]`
   — only with a green test that references/covers the bug.
 - **Commit the savepoint** (QA'd green only — never the `unimplemented!()`/red state).
 
 ### Won't-fix / duplicate
 
-Not a real defect or already tracked → `straightjacket bug-status --repo-root <repo_root> --id <id>
+Not a real defect or already tracked → `straitjacket bug-status --repo-root <repo_root> --id <id>
 --set wontfix|duplicate --note "<why>"`. No code change, no test, no fix-mode run.
 
 ## Handle the result (this session)
@@ -94,7 +94,7 @@ Not a real defect or already tracked → `straightjacket bug-status --repo-root 
   fix can't pass without weakening the test) → do NOT flip the record to `fixed`; leave it `open`,
   surface the error verbatim, and ESCALATE in the summary. A bug that can't be fixed honestly stays open.
 - **Surfaced bugs** (a fix-mode run uncovers a *different* defect) → capture via
-  `straightjacket:report-bug` as a new record; never fold it into the one you're triaging.
+  `straitjacket:report-bug` as a new record; never fold it into the one you're triaging.
 - **You remain the single ledger writer** for the whole run — all status transitions and
   bridge-field writebacks go through this session (`bug-status` / direct edits), never a sub-agent.
 
@@ -114,5 +114,5 @@ Per record:
 - Mostly the `tdd-cycle` engine's turns (coverage, authors, adversarial stack, implementation) plus
   the `root-cause-analyst` when a record needs debugging first; iterates the cycle to its cap.
 - All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
-  `<repo>/.straightjacket/bugs.json` is **tracked/committed** — it is the durable record this skill
-  reads, transitions, and never gitignores. The `straightjacket` CLI is on `PATH` via the plugin's `bin/`.
+  `<repo>/.straitjacket/bugs.json` is **tracked/committed** — it is the durable record this skill
+  reads, transitions, and never gitignores. The `straitjacket` CLI is on `PATH` via the plugin's `bin/`.

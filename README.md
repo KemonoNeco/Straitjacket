@@ -1,8 +1,8 @@
-# straightjacket plugin
+# straitjacket plugin
 
 A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Built as **composable chunks** (specialist agents + workflow stages + a Rust CLI) that **thin skills** compose. The flagship **`tdd`** skill drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline; a companion **`report-bug`** skill captures bugs found along the way into a tracked ledger (and optional GitHub/Jira tickets) that a later run can lift into tests. It hardens tests against four failure modes — **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** — using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch).
 
-> All seven skills share one engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straightjacket` Rust CLI — documented in [docs/STAGES.md](docs/STAGES.md). The decomposition retired the old monolithic `regression` command; its machinery survives as those reusable chunks.
+> All seven skills share one engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straitjacket` Rust CLI — documented in [docs/STAGES.md](docs/STAGES.md). The decomposition retired the old monolithic `regression` command; its machinery survives as those reusable chunks.
 
 * **Looking for usage?** Jump to [Quickstart](#quickstart).
 * **Looking for the shared chunks?** Read [docs/STAGES.md](docs/STAGES.md) for the stage/agent vocabulary.
@@ -13,15 +13,15 @@ A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Bu
 
 | Slash command | Purpose |
 |---|---|
-| `/straightjacket:tdd` | Drive a new feature test-first from a spec: red → adversarial-on-red → green → mutation, under a savepoint discipline. |
-| `/straightjacket:audit` | Find latent defects in source — bugs / dead code / false docs / performance / security / concurrency / error-handling — via isolated LLM lenses + mechanical tool-runners, refute-filtered. Analysis-only (no test-writing). |
-| `/straightjacket:debug` | Root-cause ONE bug from a green tree and return its cause + a reproduction. Diagnoses; does not fix. |
-| `/straightjacket:triage` | Close the loop: route a captured bug → debug (if needed) → tdd fix-mode (failing test for correct behavior + fix) → flip it to `fixed`. |
-| `/straightjacket:fuzz` | Stand-alone fuzzing: write harnesses, run them, mine each crash into a deterministic regression test. |
-| `/straightjacket:mutation` | Stand-alone mutation testing: surface surviving mutants as under-tested-behavior proposals for tdd to cover. |
-| `/straightjacket:report-bug` | Capture a found bug to a tracked local ledger (`.straightjacket/bugs.json`), then optionally mirror it to a GitHub issue and/or Jira ticket. Local-first, opt-in remotes — file a bug *without derailing* the work in progress, and feed it back as test context later. |
+| `/straitjacket:tdd` | Drive a new feature test-first from a spec: red → adversarial-on-red → green → mutation, under a savepoint discipline. |
+| `/straitjacket:audit` | Find latent defects in source — bugs / dead code / false docs / performance / security / concurrency / error-handling — via isolated LLM lenses + mechanical tool-runners, refute-filtered. Analysis-only (no test-writing). |
+| `/straitjacket:debug` | Root-cause ONE bug from a green tree and return its cause + a reproduction. Diagnoses; does not fix. |
+| `/straitjacket:triage` | Close the loop: route a captured bug → debug (if needed) → tdd fix-mode (failing test for correct behavior + fix) → flip it to `fixed`. |
+| `/straitjacket:fuzz` | Stand-alone fuzzing: write harnesses, run them, mine each crash into a deterministic regression test. |
+| `/straitjacket:mutation` | Stand-alone mutation testing: surface surviving mutants as under-tested-behavior proposals for tdd to cover. |
+| `/straitjacket:report-bug` | Capture a found bug to a tracked local ledger (`.straitjacket/bugs.json`), then optionally mirror it to a GitHub issue and/or Jira ticket. Local-first, opt-in remotes — file a bug *without derailing* the work in progress, and feed it back as test context later. |
 
-All seven skills compose one shared engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straightjacket` CLI — documented in [docs/STAGES.md](docs/STAGES.md).
+All seven skills compose one shared engine — the specialist agents, the `fanout` / `adversarial` / `audit` / `tdd-cycle` workflow stages, and the `straitjacket` CLI — documented in [docs/STAGES.md](docs/STAGES.md).
 
 Shared pipeline shape: **coverage planning → parallel authoring → adversarial team review (+ synthesis) → mutation testing → optional fuzzing**, run as dynamic-Workflow stages when the `Workflow` tool is available, else direct `Agent` dispatch.
 
@@ -30,18 +30,18 @@ Shared pipeline shape: **coverage planning → parallel authoring → adversaria
 ```bash
 # 1. Install (via Claude plugin marketplace)
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
-claude plugin install straightjacket@straightjacket
+claude plugin install straitjacket@straitjacket
 
 # 2. Verify install - should report skills/agents/hooks counts
-claude plugin details straightjacket@straightjacket
+claude plugin details straitjacket@straitjacket
 
 # 3. Run inside any Rust or C# repo with a clean baseline
 cd ~/path/to/my-rust-project
 claude
-> /straightjacket:tdd "add a function that parses a header and rejects inputs over 4 KiB"
+> /straitjacket:tdd "add a function that parses a header and rejects inputs over 4 KiB"
 ```
 
-The skill writes tests (and, in tdd, implementation) directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run); the bug ledger at `.straightjacket/bugs.json` is tracked/committed.
+The skill writes tests (and, in tdd, implementation) directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run); the bug ledger at `.straitjacket/bugs.json` is tracked/committed.
 
 ## Agents
 
@@ -67,36 +67,36 @@ The `audit-<lens>` finders + `audit-runner`/`audit-refuter`/`audit-synthesis` (f
 
 `hooks/hooks.json` enforces invariants automatically:
 
-* **`UserPromptExpansion`** on the green-baseline skill names (`tdd`, `mutation`, `fuzz`, `debug`) → runs `straightjacket hook preflight`, the gate point for a clean baseline. (`audit` is read-only and `triage` is a router, so they skip it.)
+* **`UserPromptExpansion`** on the green-baseline skill names (`tdd`, `mutation`, `fuzz`, `debug`) → runs `straitjacket hook preflight`, the gate point for a clean baseline. (`audit` is read-only and `triage` is a router, so they skip it.)
 * **`PreToolUse`** on the `Agent` tool → scans prompts for forbidden strings (`--- a/`, `+++ b/`, `git diff`) before adversarial specialists spawn (defense-in-depth on top of their tool restrictions).
 * **`PostToolUse`** on the `Agent` tool → auto-runs `verify-new-tests-compile` after each test-author returns. Blocks with diagnostics for retry.
 
 `verify-no-test-mutation` is *not* a per-author hook (see [TECHNICAL.md#hook-lifecycle](docs/TECHNICAL.md#hook-lifecycle) for the rationale). The orchestrator runs it once at end-of-phase as an audit; the adversarial-vacuousness and adversarial-misalignment specialists provide primary cheat detection.
 
-## Rust binary (`bin/straightjacket`)
+## Rust binary (`bin/straitjacket`)
 
 A single CLI exposing the deterministic helpers:
 
 ```
-straightjacket detect-stack
-straightjacket baseline-check  --repo-root <p> --stack <s> --log-dir <d>
-straightjacket lint-check      --repo-root <p> --stack <s> --log-dir <d>
-straightjacket snapshot-tests  --repo-root <p> --out-file <p>
-straightjacket verify-no-test-mutation --repo-root <p> --snapshot-file <p>
-straightjacket verify-new-tests-compile --repo-root <p> --work-units <p> --stack <s>
-straightjacket fuzz-setup      --repo-root <p> --stack <s>
-straightjacket reproducer-to-test --repro <p> --target <name> --stack <s> --work-units <p>
-straightjacket run-new-tests   --repo-root <p> --work-units <p> --stack <s> [--expect=fail]
-straightjacket preflight       (combined: detect-stack + baseline-check + lint-check)
-straightjacket hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
-straightjacket workflow-script <stage>   (emits the fanout/adversarial stage scripts)
+straitjacket detect-stack
+straitjacket baseline-check  --repo-root <p> --stack <s> --log-dir <d>
+straitjacket lint-check      --repo-root <p> --stack <s> --log-dir <d>
+straitjacket snapshot-tests  --repo-root <p> --out-file <p>
+straitjacket verify-no-test-mutation --repo-root <p> --snapshot-file <p>
+straitjacket verify-new-tests-compile --repo-root <p> --work-units <p> --stack <s>
+straitjacket fuzz-setup      --repo-root <p> --stack <s>
+straitjacket reproducer-to-test --repro <p> --target <name> --stack <s> --work-units <p>
+straitjacket run-new-tests   --repo-root <p> --work-units <p> --stack <s> [--expect=fail]
+straitjacket preflight       (combined: detect-stack + baseline-check + lint-check)
+straitjacket hook <event>    (hook entry points: preflight | pre-adversarial | post-agent)
+straitjacket workflow-script <stage>   (emits the fanout/adversarial stage scripts)
 ```
 
-Pre-built per-platform binaries are committed under `bin/` (named by Rust target triple, ~3 MB each), so downstream consumers do **not** need a Rust toolchain. You always invoke `straightjacket`; two launcher shims dispatch to the right binary for the host:
+Pre-built per-platform binaries are committed under `bin/` (named by Rust target triple, ~3 MB each), so downstream consumers do **not** need a Rust toolchain. You always invoke `straitjacket`; two launcher shims dispatch to the right binary for the host:
 
-- `bin/straightjacket` — POSIX `sh` launcher (Linux/macOS, any arch)
-- `bin/straightjacket.cmd` — Windows launcher
-- `bin/straightjacket-<triple>[.exe]` — the actual binaries the launchers pick from
+- `bin/straitjacket` — POSIX `sh` launcher (Linux/macOS, any arch)
+- `bin/straitjacket.cmd` — Windows launcher
+- `bin/straitjacket-<triple>[.exe]` — the actual binaries the launchers pick from
 
 ## Status
 
@@ -139,7 +139,7 @@ The skills shell out to these tools when present and degrade gracefully when abs
 
 ```bash
 claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
-claude plugin install straightjacket@straightjacket
+claude plugin install straitjacket@straitjacket
 ```
 
 **Local dev** - point Claude Code at a checkout:
@@ -148,7 +148,7 @@ claude plugin install straightjacket@straightjacket
 claude --plugin-dir ~/Code/regression-tests-plugin
 ```
 
-Then invoke `/straightjacket:tdd` in any Rust or C# project's git working tree.
+Then invoke `/straitjacket:tdd` in any Rust or C# project's git working tree.
 
 ## Build from source
 
@@ -157,7 +157,7 @@ The committed binaries are produced by CI (`.github/workflows/build-binaries.yml
 ```bash
 cargo build --release
 # name the output by your host triple so the launcher finds it, e.g. Windows x64:
-cp target/release/straightjacket.exe bin/straightjacket-x86_64-pc-windows-msvc.exe
+cp target/release/straitjacket.exe bin/straitjacket-x86_64-pc-windows-msvc.exe
 ```
 
 The per-platform binaries under `bin/` are committed so end users don't need a Rust toolchain. See [CLAUDE.md](CLAUDE.md) for the full toolchain bootstrap (vcvars sourcing, MSBuild env vars, etc.) and the launcher/CI details.

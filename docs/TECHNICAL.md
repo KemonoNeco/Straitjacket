@@ -1,4 +1,4 @@
-# Technical guide - `straightjacket` plugin
+# Technical guide - `straitjacket` plugin
 
 > ⚠️ **Stale — rewrite pending.** This deep-dive predates the **decomposition refactor**
 > (`~/.claude/plans/make-a-plan-instead-calm-pebble.md`): the `regression` skill has been
@@ -51,9 +51,9 @@ regression-tests-plugin/
 │   └── fuzz-runner.md
 ├── hooks/                  (4) Three Claude Code hook bindings
 │   └── hooks.json
-├── bin/straightjacket      (5a) sh launcher → straightjacket-<triple>
-│   ├── straightjacket.cmd        Windows launcher (PATHEXT-resolved)
-│   └── straightjacket-<triple>[.exe]  Per-platform binaries (committed, ~3MB each)
+├── bin/straitjacket      (5a) sh launcher → straitjacket-<triple>
+│   ├── straitjacket.cmd        Windows launcher (PATHEXT-resolved)
+│   └── straitjacket-<triple>[.exe]  Per-platform binaries (committed, ~3MB each)
 ├── src/                    (5b) Helper-binary source (10 subcommands)
 │   ├── main.rs
 │   ├── lib.rs
@@ -83,7 +83,7 @@ flowchart TB
 
 | Layer | Lives in | Role |
 |---|---|---|
-| 1 - Rust CLI | `bin/straightjacket` (launcher → `straightjacket-<triple>`) | 10 subcommands |
+| 1 - Rust CLI | `bin/straitjacket` (launcher → `straitjacket-<triple>`) | 10 subcommands |
 | 2 - Shared infra | `src/common/` | walk, subprocess, json_io |
 | 3 - Specialist agents | `agents/*.md` | 10 agents |
 | 4 - Skill orchestrator | `skills/regression/SKILL.md` | main Claude session |
@@ -99,11 +99,11 @@ flowchart TB
 
 ## Skill phase flow
 
-The `straightjacket` skill runs a coverage-planning → authoring → adversarial-review → mutation cadence over five phases:
+The `straitjacket` skill runs a coverage-planning → authoring → adversarial-review → mutation cadence over five phases:
 
 ```mermaid
 flowchart TD
-    Start(["/straightjacket"])
+    Start(["/straitjacket"])
     Hook["Hook<br/>preflight"]
     P1["Phase 1<br/>Detect &amp; Baseline"]
     P2["Phase 2<br/>Coverage Planning"]
@@ -181,12 +181,12 @@ Three Claude Code hook events, each backed by a pure function in `src/commands/h
 * `Allow` → empty object (no stdout).
 * `RunChecks(...)` → `{checks_to_run: ["verify-new-tests-compile", ...]}` - kebab-case names; orchestrator dispatches.
 
-**Why `verify-no-test-mutation` is not a per-author hook.** An earlier iteration ran SHA-256 checks after every author returned. False positives flooded the test runs because idiomatic Rust source files embed `#[cfg(test)] mod tests`, so a legitimate authoring of an in-source test trips a "test file modified" warning. The current design runs the audit *once* at end-of-phase by the orchestrator (still backed by `bin/straightjacket verify-no-test-mutation`) and relies on the `adversarial-vacuousness` + `adversarial-misalignment` specialists as primary cheat detection.
+**Why `verify-no-test-mutation` is not a per-author hook.** An earlier iteration ran SHA-256 checks after every author returned. False positives flooded the test runs because idiomatic Rust source files embed `#[cfg(test)] mod tests`, so a legitimate authoring of an in-source test trips a "test file modified" warning. The current design runs the audit *once* at end-of-phase by the orchestrator (still backed by `bin/straitjacket verify-no-test-mutation`) and relies on the `adversarial-vacuousness` + `adversarial-misalignment` specialists as primary cheat detection.
 
 ## The Rust CLI surface
 
 ```
-straightjacket <subcommand> [options]
+straitjacket <subcommand> [options]
 
   detect-stack              repo→{rust|csharp|both|none} + manifest paths
   preflight                 detect-stack + baseline-check + lint-check
@@ -253,7 +253,7 @@ WorkUnit
 ├── output_test_name    Language-appropriate test name.
 ├── target_stub_path    Reserved for future use (the TDD skill that consumed
 │                       this field has been temporarily removed). Currently
-│                       null in straightjacket mode.
+│                       null in straitjacket mode.
 ├── status              "pending" | "written" | "implemented" | "rejected_lint" |
 │                       "quarantined" | "surfaced_bug"
 ├── round               -1 (fuzz reproducer) | 0 (initial) | N (adversarial round)
@@ -283,8 +283,8 @@ WorkUnit
    * A `#[cfg(test)] mod tests` block.
 2. Add `pub mod <my_cmd>;` to `src/commands/mod.rs`.
 3. Add the variant to `Commands` in `src/main.rs` and wire it into the `match cli.command`.
-4. Rebuild your host's binary for local testing: `cargo build --release && cp target/release/straightjacket.exe bin/straightjacket-x86_64-pc-windows-msvc.exe` (substitute your target triple / drop `.exe` on Unix). Refresh all platforms via the `build-binaries` workflow.
-5. Commit the refreshed `bin/straightjacket-<triple>[.exe]` binaries (CI re-commits the full set on dispatch/tag).
+4. Rebuild your host's binary for local testing: `cargo build --release && cp target/release/straitjacket.exe bin/straitjacket-x86_64-pc-windows-msvc.exe` (substitute your target triple / drop `.exe` on Unix). Refresh all platforms via the `build-binaries` workflow.
+5. Commit the refreshed `bin/straitjacket-<triple>[.exe]` binaries (CI re-commits the full set on dispatch/tag).
 
 ### Adding a new specialist agent
 

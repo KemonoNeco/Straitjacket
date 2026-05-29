@@ -1,6 +1,6 @@
 ---
 name: fuzz-harness-author
-description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the straightjacket plugin — invoked during the plugin's fuzz pipeline.
+description: Writes libFuzzer (Rust cargo-fuzz) or SharpFuzz (C#) harnesses for fuzzable work units, then returns runner tasks. Internal to the straitjacket plugin — invoked during the plugin's fuzz pipeline.
 tools: Read, Grep, Glob, Write, Edit, Bash, PowerShell
 model: opus
 effort: xhigh
@@ -17,7 +17,7 @@ Fuzz harness design is a reasoning-heavy task (input shape, invariants, what cou
 - `fuzzable_targets`: subset of work units with `fuzzable: true`. Each names a function suitable for byte-input fuzzing (parsers, deserializers, untrusted-input handlers).
 - `source_under_test`: source files for the targets so you can read signatures and understand input types.
 - `stack`: `rust` | `csharp`.
-- `fuzz_scaffolding_info` (from `straightjacket fuzz-setup`):
+- `fuzz_scaffolding_info` (from `straitjacket fuzz-setup`):
   - For Rust: does `<repo>/fuzz/` exist? If not, the orchestrator already ran `cargo fuzz init`. List of existing fuzz targets.
   - For C#: is `SharpFuzz.CommandLine` available? Are the target assemblies instrumentable? If SharpFuzz is missing, return immediately with `harnesses_skipped: ["sharpfuzz-not-installed"]`.
 - `per_target_time_seconds`: time budget passed to each runner (default 60).

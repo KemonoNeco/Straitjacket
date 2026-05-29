@@ -76,7 +76,7 @@ pub fn set_bug_status(
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
-    let path = args.repo_root.join(".straightjacket").join("bugs.json");
+    let path = args.repo_root.join(".straitjacket").join("bugs.json");
     let ledger: Value = read_json_file(&path)
         .with_context(|| format!("failed to read bug ledger at {}", path.display()))?;
     let updated = set_bug_status(&ledger, &args.id, args.set.as_str(), args.note.as_deref())?;

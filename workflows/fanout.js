@@ -1,6 +1,6 @@
 // fanout.js — generic capped parallel-dispatch workflow stage.
 //
-// Emitted by `straightjacket workflow-script fanout` and run via the Workflow tool's
+// Emitted by `straitjacket workflow-script fanout` and run via the Workflow tool's
 // inline `script`. The SKILL builds each task's full self-contained prompt + picks the
 // agentType (judgment stays in the skill); this script is pure plumbing — it runs the
 // tasks in parallel within the plugin's cost cap and returns each task's structured
@@ -15,7 +15,7 @@
 
 export const meta = {
   name: 'fanout',
-  description: 'Generic capped parallel dispatch of authoring/implementation agents. The skill builds each task prompt and chooses the agentType; the script runs them in parallel within the cap and returns per-task structured results. Used by tdd authoring (B) + implementation (D) and straightjacket Phase 3.',
+  description: 'Generic capped parallel dispatch of authoring/implementation agents. The skill builds each task prompt and chooses the agentType; the script runs them in parallel within the cap and returns per-task structured results. Used by tdd authoring (B) + implementation (D) and straitjacket Phase 3.',
   phases: [
     { title: 'Fanout', detail: 'parallel agent tasks, batched to the cap' },
   ],

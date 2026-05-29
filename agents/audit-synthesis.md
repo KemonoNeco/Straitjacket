@@ -1,6 +1,6 @@
 ---
 name: audit-synthesis
-description: Synthesizes the audit refuter votes and the mechanical findings into the canonical audit result — dedupes overlapping LLM-and-tool findings into pre-trusted corroborated ones, keeps the refute-quorum survivors plus all mechanical/corroborated findings, drops (and logs) the refuted, surfaces the uncertain, ranks by severity, and assigns each survivor a final disposition with bridge fields filled. Internal to the straightjacket plugin — the audit capability's final merge. Distinct from adversarial-synthesis (which works on TEST reports; this works on SOURCE findings).
+description: Synthesizes the audit refuter votes and the mechanical findings into the canonical audit result — dedupes overlapping LLM-and-tool findings into pre-trusted corroborated ones, keeps the refute-quorum survivors plus all mechanical/corroborated findings, drops (and logs) the refuted, surfaces the uncertain, ranks by severity, and assigns each survivor a final disposition with bridge fields filled. Internal to the straitjacket plugin — the audit capability's final merge. Distinct from adversarial-synthesis (which works on TEST reports; this works on SOURCE findings).
 tools: Read, Grep, Glob
 model: opus
 effort: xhigh

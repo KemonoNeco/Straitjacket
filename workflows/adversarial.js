@@ -1,8 +1,8 @@
 // adversarial.js — shared adversarial-validation workflow stage.
 //
-// Emitted by `straightjacket workflow-script adversarial` (include_str!'d into the
+// Emitted by `straitjacket workflow-script adversarial` (include_str!'d into the
 // binary) and run via the Workflow tool's inline `script`. Used by:
-//   - straightjacket Phase 4a (lock existing behavior),
+//   - straitjacket Phase 4a (lock existing behavior),
 //   - tdd stage C  (pre-impl validity review, on the RED tests),
 //   - tdd stage E  (post-green passing-reason review + mutation).
 //
@@ -22,7 +22,7 @@
 
 export const meta = {
   name: 'adversarial-validation',
-  description: 'Adversarial test-validity review: three isolated specialists (vacuousness / happy-path / misalignment) fan out in parallel, then adversarial-synthesis dedupes + ranks; post-green also runs a mutation-runner team. Shared by straightjacket Phase 4a and tdd stages C (pre-impl, on red tests) + E (post-green).',
+  description: 'Adversarial test-validity review: three isolated specialists (vacuousness / happy-path / misalignment) fan out in parallel, then adversarial-synthesis dedupes + ranks; post-green also runs a mutation-runner team. Shared by straitjacket Phase 4a and tdd stages C (pre-impl, on red tests) + E (post-green).',
   phases: [
     { title: 'Specialists', detail: '3 isolated adversarial specialists in parallel (no diff in scope; they Read source themselves)' },
     { title: 'Synthesis', detail: 'adversarial-synthesis dedupes/ranks the three reports' },
@@ -82,9 +82,9 @@ function specialistPrompt(dim) {
 
 phase('Specialists')
 const reports = (await parallel([
-  () => agent(specialistPrompt('vacuousness'), { agentType: 'straightjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'vacuousness' }),
-  () => agent(specialistPrompt('happy-path'), { agentType: 'straightjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'happy-path' }),
-  () => agent(specialistPrompt('misalignment'), { agentType: 'straightjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'misalignment' }),
+  () => agent(specialistPrompt('vacuousness'), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'vacuousness' }),
+  () => agent(specialistPrompt('happy-path'), { agentType: 'straitjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'happy-path' }),
+  () => agent(specialistPrompt('misalignment'), { agentType: 'straitjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'misalignment' }),
 ])).filter(Boolean)
 
 phase('Synthesis')
@@ -98,7 +98,7 @@ const synthesis = await agent([
     ? `This is the POST-GREEN round: emit mutation_runner_tasks for the surviving-mutant hunt.`
     : `This is a PRE-implementation round (no implementation exists yet): emit ranked test additions/strengthenings to apply while still RED; leave mutation_runner_tasks empty.`,
   `Return ONLY JSON matching the adversarial-synthesis output contract.`,
-].join('\n'), { agentType: 'straightjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: 'Synthesis', label: 'synthesis' })
+].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: 'Synthesis', label: 'synthesis' })
 
 let mutationResults = []
 if (mode === 'post_green') {
@@ -113,7 +113,7 @@ if (mode === 'post_green') {
           `Run mutation testing for ${target} (scope: ${t.scope || 'file'}, stack: ${stack}).`,
           `repo_root: ${repoRoot}`,
           `Return surviving mutants as JSON.`,
-        ].join('\n'), { agentType: 'straightjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'Mutation', label: `mutation:${target}` })
+        ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'Mutation', label: `mutation:${target}` })
       })
       mutationResults = mutationResults.concat((await parallel(batch)).filter(Boolean))
     }

@@ -1,4 +1,4 @@
-# Straightjacket stage vocabulary & shared chunks
+# Straitjacket stage vocabulary & shared chunks
 
 This is the canonical reference for the plugin's **reusable chunks** - the specialist agents,
 the workflow stages, the coverage modes, and the cardinal rules that every skill composes.
@@ -45,9 +45,9 @@ pass `model:` - each agent's frontmatter locks its tier and tool list. Tool rest
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Writes libFuzzer / SharpFuzz harnesses → runner tasks. Single. |
 | `fuzz-runner` | haiku | - | Read, Glob, Bash, PowerShell | Mechanical: runs one harness for a time budget → crash artifacts. |
 | `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Replaces `unimplemented!()` / `NotImplementedException` stubs (tdd green) **or** fixes buggy source (fix mode). **Never modifies tests.** |
-| `gate-runner` | haiku | - | Read, Glob, Bash, PowerShell, Write | Mechanical: materializes work-units.json and runs one straightjacket CLI gate (run-new-tests / verify-*); the in-workflow sequential single-writer for `tdd-cycle`. |
+| `gate-runner` | haiku | - | Read, Glob, Bash, PowerShell, Write | Mechanical: materializes work-units.json and runs one straitjacket CLI gate (run-new-tests / verify-*); the in-workflow sequential single-writer for `tdd-cycle`. |
 | `audit-<lens>` (×7) | opus | high | Read, Grep, Glob | Isolated source-audit finders, one per lens (latent-bug, security, performance, dead-code, doc-drift, concurrency, error-handling). **No Bash.** Emit findings per `schemas/audit-finding.schema.json` (`lens` field is un-prefixed). |
-| `audit-runner` | haiku | - | Read, Bash, PowerShell, Glob | Mechanical: runs one `straightjacket audit-run --tool …` and returns its normalized findings. |
+| `audit-runner` | haiku | - | Read, Bash, PowerShell, Glob | Mechanical: runs one `straitjacket audit-run --tool …` and returns its normalized findings. |
 | `audit-refuter` | opus | high | Read, Grep, Glob | Skeptic: votes refute/survive/uncertain over the full LLM-finding set; defaults to refute when unconfirmable. **No Bash.** |
 | `audit-synthesis` | opus | xhigh | Read, Grep, Glob | Dedupes/ranks audit survivors + mechanical findings; corroborates LLM+tool agreement; assigns disposition. Distinct from `adversarial-synthesis` (which works on test reports). |
 | `root-cause-analyst` | opus | xhigh | Read, Grep, Glob, Bash, PowerShell | The debugger (debug/triage skills). Reproduces + root-causes one bug from green (**NO Edit**; leaves the tree green); returns the 3 bridge fields + root_cause + reproduction. Single intra-turn agent, not a stage. |
@@ -61,7 +61,7 @@ pause, so each fan-out stage is its own invocation and the session regains contr
 
 **Capability check:** inspect your own available tools for one named `Workflow`.
 
-- **Present** → run `straightjacket workflow-script <stage>` (Bash) to emit the stage script to
+- **Present** → run `straitjacket workflow-script <stage>` (Bash) to emit the stage script to
   stdout, capture it verbatim, and call `Workflow({script: <captured>, args: {...bindings}})`.
   Parse the structured result and merge into `work-units.json` (you stay the single writer).
 - **Absent** → dispatch the same agents directly via `Agent`, all parallel spawns in one message.
@@ -137,7 +137,7 @@ Lock/cover the behavior of an explicit file, directory, or `crate::module` symbo
 gets the resolved paths/symbols + any `CLAUDE.md` in or above them + nearby test files for
 convention. Today it **infers** `intended_behavior` from docstrings and code intent.
 
-**Optional ledger seed:** if `<repo>/.straightjacket/bugs.json` exists, the orchestrator may pass
+**Optional ledger seed:** if `<repo>/.straitjacket/bugs.json` exists, the orchestrator may pass
 `open` records whose `suspect_files` intersect the target scope; the reviewer can turn each
 `intended_behavior_seed` into a work unit's `intended_behavior` (bridge fields
 `suspect_files`→`target_file`, `suspect_symbol`→`target_symbol`).
@@ -174,5 +174,5 @@ All per-run artifacts live under `<repo>/.claude-regression/<run_id>/` (run_id =
 `YYYYMMDDThhmmss-<4hex>`), gitignored: `work-units.json`, `tooling.json`, `test-snapshot.json`,
 `state.json`, logs, `quarantine/`, `staged-tests/`, `audit-findings.json` (the audit skill's
 transient findings - distinct from `work-units.json`). The **bug ledger** at
-`<repo>/.straightjacket/bugs.json` is the exception - it is **tracked/committed**, the durable
+`<repo>/.straitjacket/bugs.json` is the exception - it is **tracked/committed**, the durable
 hand-off between `report-bug`, `audit`, `triage`, and a later fix-mode run.

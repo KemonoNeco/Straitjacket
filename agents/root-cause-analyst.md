@@ -1,6 +1,6 @@
 ---
 name: root-cause-analyst
-description: Investigates ONE bug from a green working tree and returns its root cause plus the three bug-ledger bridge fields and a reproduction — it diagnoses, it never fixes. Reproduces, hypothesizes, instruments via Bash, and re-runs in an intra-turn loop, leaving the tree exactly as green as it found it. Internal to the straightjacket plugin — invoked directly (single agent, not a workflow stage) by the debug and triage skills. Has Bash/PowerShell (it must run the code) but NO Edit — the "leave the tree green" guarantee is mechanical.
+description: Investigates ONE bug from a green working tree and returns its root cause plus the three bug-ledger bridge fields and a reproduction — it diagnoses, it never fixes. Reproduces, hypothesizes, instruments via Bash, and re-runs in an intra-turn loop, leaving the tree exactly as green as it found it. Internal to the straitjacket plugin — invoked directly (single agent, not a workflow stage) by the debug and triage skills. Has Bash/PowerShell (it must run the code) but NO Edit — the "leave the tree green" guarantee is mechanical.
 tools: Read, Grep, Glob, Bash, PowerShell
 model: opus
 effort: xhigh

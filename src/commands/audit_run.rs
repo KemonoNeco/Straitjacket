@@ -260,7 +260,7 @@ mod tests {
                 ],
                 "children": []
             },
-            "package_id": "straightjacket 0.1.0 (path+file:///repo)"
+            "package_id": "straitjacket 0.1.0 (path+file:///repo)"
         })
         .to_string()
     }
@@ -286,7 +286,7 @@ mod tests {
                 ],
                 "children": []
             },
-            "package_id": "straightjacket 0.1.0 (path+file:///repo)"
+            "package_id": "straitjacket 0.1.0 (path+file:///repo)"
         })
         .to_string()
     }

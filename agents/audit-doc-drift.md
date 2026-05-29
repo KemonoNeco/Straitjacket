@@ -1,6 +1,6 @@
 ---
 name: audit-doc-drift
-description: Reviews assigned source in isolated context through the doc-drift lens — doc comments, README, and docstrings that contradict what the code actually does ("false docs") — and emits findings per the audit-finding schema. Internal to the straightjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
+description: Reviews assigned source in isolated context through the doc-drift lens — doc comments, README, and docstrings that contradict what the code actually does ("false docs") — and emits findings per the audit-finding schema. Internal to the straitjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
 effort: high
