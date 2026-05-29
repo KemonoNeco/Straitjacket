@@ -56,6 +56,12 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Test
+        # The test suite is Windows-shell-bound (spawns `cmd /c`, `ping -n`,
+        # `%VAR%`, drive-letter paths) and only one test is #[cfg(windows)]-gated,
+        # so `cargo test` panics on Unix where `cmd` is absent. The shipped code
+        # is otherwise portable — `cargo build` below compiles it per target on
+        # every platform. Making the suite cross-platform is tracked as follow-up.
+        if: runner.os == 'Windows'
         run: cargo test --lib --target ${{ matrix.target }}
 
       - name: Build release
