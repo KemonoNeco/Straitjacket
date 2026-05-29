@@ -29,7 +29,7 @@ Shared pipeline shape: **coverage planning → parallel authoring → adversaria
 
 ```bash
 # 1. Install (via Claude plugin marketplace)
-claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
+claude plugin marketplace add https://github.com/KemonoNeco/Straitjacket
 claude plugin install straitjacket@straitjacket
 
 # 2. Verify install - should report skills/agents/hooks counts
@@ -138,7 +138,7 @@ The skills shell out to these tools when present and degrade gracefully when abs
 **Recommended** - via Claude plugin marketplace:
 
 ```bash
-claude plugin marketplace add https://github.com/KemonoNeco/regression-tests-plugin
+claude plugin marketplace add https://github.com/KemonoNeco/Straitjacket
 claude plugin install straitjacket@straitjacket
 ```
 
