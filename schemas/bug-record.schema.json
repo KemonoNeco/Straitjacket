@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bug-record.schema.json",
+  "title": "BugRecord",
+  "description": "A single captured bug, persisted in the consumer repo's tracked ledger at .straightjacket/bugs.json (wrapper shape {\"bugs\": [BugRecord, ...]}). Written by the report-bug skill the moment a bug is found, BEFORE any remote mirroring, so a bug is never lost if a backend is absent or the host workflow is interrupted. The ledger is meant to be committed. Three fields form the bridge to the straightjacket coverage-reviewer so a later regression/tdd run can lift a bug into a test work unit without prose-parsing: suspect_files -> WorkUnit.target_file, suspect_symbol -> WorkUnit.target_symbol, intended_behavior_seed -> WorkUnit.intended_behavior.",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "created",
+    "status",
+    "severity",
+    "summary",
+    "expected",
+    "actual",
+    "suspect_files",
+    "intended_behavior_seed"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Stable, human-readable, collision-resistant identifier. Format: bug-YYYY-MM-DD-NN where NN is a zero-padded per-day counter (next unused index among existing same-day ids in the ledger). NOT a UUID — the skill has no randomness source and a date+counter is sortable and readable.",
+      "pattern": "^bug-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{2,}$"
+    },
+    "title": {
+      "type": "string",
+      "description": "One-line summary, pattern '[Area] symptom'. Reused verbatim as the GitHub issue title / Jira summary.",
+      "minLength": 5
+    },
+    "created": {
+      "type": "string",
+      "description": "ISO 8601 date (YYYY-MM-DD) the bug was captured. Use the current date from the session environment."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["open", "mirrored", "fixed", "wontfix", "duplicate"],
+      "description": "Lifecycle. 'open' = captured locally only. 'mirrored' = a remote issue/ticket exists (see remote). 'fixed'/'wontfix'/'duplicate' set later when the bug is resolved or merged into another record.",
+      "default": "open"
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["critical", "high", "medium", "low"],
+      "description": "Impact. Drives GitHub label and Jira priority when mirrored."
+    },
+    "summary": {
+      "type": "string",
+      "description": "1-3 sentence description of the problem in prose.",
+      "minLength": 10
+    },
+    "steps_to_reproduce": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Ordered reproduction steps. May be empty if not yet known; capture what is known rather than blocking."
+    },
+    "expected": {
+      "type": "string",
+      "description": "Observable behavior that SHOULD occur (return value, error type, side effect, UI state). Half of the test oracle.",
+      "minLength": 3
+    },
+    "actual": {
+      "type": "string",
+      "description": "Observable behavior that DOES occur (the defect). The other half of the test oracle.",
+      "minLength": 3
+    },
+    "suspect_files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Repo-relative path(s) believed to contain the defect. CONSUMPTION BRIDGE: maps to WorkUnit.target_file when a regression/tdd run lifts this bug into a test work unit. Best-effort; may be empty when unknown.",
+      "minItems": 0
+    },
+    "suspect_symbol": {
+      "type": "string",
+      "description": "Function/method/type believed responsible, language-qualified (Rust: Parser::parse_header; C#: Parser.ParseHeader). CONSUMPTION BRIDGE: maps to WorkUnit.target_symbol. Optional."
+    },
+    "intended_behavior_seed": {
+      "type": "string",
+      "description": "A contract-style sentence describing what the correct behavior is, phrased so a coverage-reviewer can lift it into a write-once WorkUnit.intended_behavior anchor. Derive from expected-vs-actual, framed as the rule the fixed code must satisfy (e.g. 'parse_header rejects a header longer than 4 KiB with HeaderTooLong instead of truncating'). CONSUMPTION BRIDGE: this is the field that makes the ledger test-context-ready.",
+      "minLength": 10
+    },
+    "error_signature": {
+      "type": "string",
+      "description": "Error type / message / trimmed stack excerpt, if any. Key phrases, not a full stack dump. Used for local dedupe matching and remote issue body."
+    },
+    "environment": {
+      "type": "string",
+      "description": "Platform / version / OS / config relevant to reproduction. Optional."
+    },
+    "discovered_during": {
+      "type": "string",
+      "description": "Provenance — how the bug surfaced. Free text, e.g. 'manual', 'straightjacket:regression run <run_id>', 'tdd stage D', 'code review'. Records the 'stay on task' context the skill exists to preserve."
+    },
+    "labels": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Freeform tags applied locally and propagated to GitHub labels / Jira labels when mirrored."
+    },
+    "remote": {
+      "type": "object",
+      "description": "Populated AFTER successful mirroring. Absent or empty while status is 'open'.",
+      "properties": {
+        "github": {
+          "type": "object",
+          "properties": {
+            "repo": { "type": "string", "description": "owner/name the issue was created in." },
+            "number": { "type": "integer", "description": "Issue number." },
+            "url": { "type": "string", "description": "Issue HTML URL." }
+          }
+        },
+        "jira": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string", "description": "Issue key, e.g. PROJ-123." },
+            "url": { "type": "string", "description": "Browse URL." }
+          }
+        }
+      }
+    },
+    "related": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other bug ids in this ledger, or remote keys/URLs, this record relates to (regression-of, duplicate-of, blocks)."
+    },
+    "notes": {
+      "type": "string",
+      "description": "Freeform follow-up notes appended over the bug's life."
+    }
+  }
+}

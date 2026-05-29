@@ -1,6 +1,6 @@
 # straightjacket plugin
 
-A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Two skills over one engine: **`regression`** locks current behavior, and **`tdd`** drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. It hardens tests against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch).
+A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Two skills over one engine: **`regression`** locks current behavior, and **`tdd`** drives new features test-first (spec → red → adversarial-on-red → green → mutation) under a savepoint discipline. It hardens tests against four failure modes - **happy-path bias**, **vacuous assertions**, **test-mutation cheats**, and **test-contract misalignment** - using parallel specialist subagents, mutation testing, and (optionally) fuzzing, run as dynamic-Workflow stages when the `Workflow` tool is available (else direct `Agent` dispatch). A companion **`report-bug`** skill captures bugs found along the way into a tracked ledger (and optional GitHub/Jira tickets) that a later run can lift into tests.
 
 > Both skills share the same eleven specialist agents + the `straightjacket` Rust CLI; the `tdd` skill adds `implementation-author` for the green phase.
 
@@ -14,6 +14,7 @@ A Claude Code multi-agent test-engineering plugin — *it does sanity tests*. Tw
 |---|---|
 | `/straightjacket:regression` | Generate regression tests for recent changes or a target module. **Locks current behavior.** |
 | `/straightjacket:tdd` | Drive a new feature test-first from a spec: red → adversarial-on-red → green → mutation, under a savepoint discipline. |
+| `/straightjacket:report-bug` | Capture a found bug to a tracked local ledger (`.straightjacket/bugs.json`), then optionally mirror it to a GitHub issue and/or Jira ticket. Local-first, opt-in remotes — designed to file a bug *without derailing* the work in progress, and feed it back as test context later. |
 
 Shared pipeline shape: **coverage planning → parallel authoring → adversarial team review (+ synthesis) → mutation testing → optional fuzzing**, run as dynamic-Workflow stages when the `Workflow` tool is available, else direct `Agent` dispatch.
 
