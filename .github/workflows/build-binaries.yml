@@ -37,7 +37,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-          - os: macos-13
+          # Both macOS targets build on Apple Silicon runners: macos-13 (Intel)
+          # runners queue for a long time as GitHub winds them down, and an
+          # arm64 runner cross-compiles x86_64-apple-darwin out of the box
+          # (system toolchain ships the x86_64 slice). Tests are Windows-only,
+          # so we never need to execute the x86_64 binary here.
+          - os: macos-14
             target: x86_64-apple-darwin
           - os: macos-14
             target: aarch64-apple-darwin
