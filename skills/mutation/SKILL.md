@@ -29,7 +29,7 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 
 1. Confirm a git repo; resolve `repo_root`; tree should be **green** (mutation is in the green-baseline preflight matcher — mutants are only meaningful against a passing suite). Generate `run_id`.
 2. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
-3. Probe the mutation tool (`cargo mutants --version` / `dotnet stryker --version`) → `<run_id>/tooling.json`. **If genuinely absent → STOP** with a clear message (mutation has no static fallback). If the tool is reported absent but you can see it is installed, treat it as a straitjacket false-negative probe bug and apply the surfaced-bug reflex (capture via `report-bug`, then STOP) rather than a bare "tool missing".
+3. Probe the mutation tool (`cargo mutants --version` / `dotnet stryker --version`) → `<run_id>/tooling.json`. **If genuinely absent → STOP** with a clear message (mutation has no static fallback). If the tool is reported absent but you can see it is installed, treat it as a straitjacket false-negative probe bug and apply the surfaced-bug reflex ([STAGES.md](../../docs/STAGES.md) rule 7) — capture via `straitjacket:report-bug` — then STOP and tell the user the run is blocked on a captured plugin bug (do not fix the probe inline; that is a `tdd`/`triage` job).
 
 ## Run the mutation pass
 
