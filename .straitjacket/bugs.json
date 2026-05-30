@@ -15,7 +15,7 @@
         "toolchain-detection"
       ],
       "notes": [
-        "Fixed via triage fix-mode. RED->GREEN test commands::fuzz_setup::tests::decide_cargo_fuzz_available_is_version_ok_regardless_of_no_subcommand_arm pins the (false,true)->true discriminator; extracted pure decide_cargo_fuzz_available helper and rewired probe_fuzz_setup through it, deleting the buggy inline && short-circuit."
+        "Fixed via triage fix-mode, then SIMPLIFIED per PR #13 review (gemini-code-assist). Final fix: probe_fuzz_setup computes cargo_fuzz_available DIRECTLY from `cargo fuzz --version` success (nulled stdout/stderr to dodge the is-terminal panic); the buggy inline `probe_tool(\"cargo\",\"fuzz\") && ...` short-circuit is deleted. The scaffold helper `decide_cargo_fuzz_available` and its unit test (which had pinned the (false,true)->true discriminator) were REMOVED as vacuous once the dead no-subcommand probe was dropped: with no second probe to combine, the bug is STRUCTURALLY IMPOSSIBLE rather than guarded against. The 'why' is preserved as an inline comment in probe_fuzz_setup referencing this id, and the surviving probe_fuzz_setup_for_{rust,csharp,both}_* tests remain green. Mirrored at GitHub issue #12; fixed on PR #13."
       ],
       "severity": "high",
       "status": "fixed",
