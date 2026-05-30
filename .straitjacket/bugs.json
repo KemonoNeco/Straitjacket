@@ -31,6 +31,84 @@
       ],
       "suspect_symbol": "crate::commands::fuzz_setup::probe_fuzz_setup",
       "title": "[fuzz-setup] cargo-fuzz availability probe is always false (no-subcommand arm exits 2)"
+    },
+    {
+      "id": "bug-2026-05-29-02",
+      "title": "[tdd-cycle] coverage phase is spec-mode only — cannot express triage fix-mode target seam",
+      "created": "2026-05-29",
+      "status": "mirrored",
+      "severity": "medium",
+      "summary": "workflows/tdd-cycle.js hardcodes `mode: spec` in its Coverage phase agent() call (~line 196-202) and exposes only a `spec` binding — no `mode`, `target_file`, `target_symbol`, or `intended_behavior_seed`. triage's fix-mode seam #1 (skills/triage/SKILL.md) requires seeding coverage-reviewer in TARGET mode with the record's intended_behavior_seed as the authoritative verbatim locked contract, so it writes a test for the CORRECT behavior rather than characterizing the buggy current behavior. The coverage-reviewer agent (agents/coverage-reviewer.md step 7) supports that fix-mode path, but the workflow triage is told to reuse cannot pass mode/target/seed through. The skill's documented contract and the workflow's actual surface disagree.",
+      "steps_to_reproduce": [
+        "Run straitjacket:triage on a reproduced ledger record with all three bridge fields filled (fix mode).",
+        "Observe the only way to reach coverage-reviewer is workflows/tdd-cycle.js, whose Coverage phase emits a hardcoded `mode: spec` prompt with `spec` as its only knob.",
+        "Confirm there is no args binding for mode/target_file/target_symbol/intended_behavior_seed in tdd-cycle.js — seam #1 has nowhere to bind."
+      ],
+      "expected": "tdd-cycle's coverage phase can run coverage-reviewer in target/fix mode: it accepts a `mode` binding plus target_file/target_symbol/intended_behavior_seed and passes the seed through verbatim as the locked contract, so triage's fix-mode seam #1 is expressible through the workflow.",
+      "actual": "Coverage phase is welded to `mode: spec` with only a `spec` binding. Fix-mode framing can only be smuggled into the `spec` string; coverage-reviewer runs mislabeled as spec/greenfield and RE-DERIVES intended_behavior from the text instead of locking the seed verbatim (drift risk), and the orchestrator must hand-write the 'rewire the existing buggy function' instruction that target/fix mode would supply structurally.",
+      "suspect_files": [
+        "workflows/tdd-cycle.js",
+        "skills/triage/SKILL.md",
+        "agents/coverage-reviewer.md"
+      ],
+      "suspect_symbol": "workflows/tdd-cycle.js — Coverage phase agent() call (the hardcoded `mode: spec` coverage prompt)",
+      "intended_behavior_seed": "tdd-cycle.js's coverage phase must be able to run coverage-reviewer in target/fix mode — accepting a mode binding plus target_file/target_symbol/intended_behavior_seed and passing the seed through verbatim as the locked contract — so triage's fix-mode seam #1 is expressible through the workflow rather than smuggled into the spec string.",
+      "error_signature": "coverage-reviewer (run 1) returned work_units: [] with stack:undefined, treating the workflow's own trailing 'Read schemas/work-unit.schema.json' line as the spec — observed when spec was empty; the structural gap is that mode is fixed to `spec` regardless.",
+      "environment": "straitjacket plugin, workflows/tdd-cycle.js as emitted by `straitjacket workflow-script tdd-cycle`; observed during triage of bug-2026-05-29-01 on 2026-05-29.",
+      "discovered_during": "straitjacket:triage of bug-2026-05-29-01 (2026-05-29)",
+      "labels": [
+        "orchestration",
+        "tdd-cycle",
+        "triage",
+        "fix-mode"
+      ],
+      "notes": "Worked around this run by smuggling the full fix-mode framing into the `spec` string; it held (locked_contracts carried the seed verbatim) but is papered-over, not a fix. IMPORTANT: this is orchestration code (workflows/*.js) — hand-authored, no unit-test harness — so it is live-run-guarded, NOT test-backed, and cannot be driven through the tdd loop the way a Rust bug can. Fix direction: add a `mode` binding (+ targetFile/targetSymbol/intendedBehaviorSeed) to tdd-cycle.js so the Coverage agent() call branches to a real target/fix-mode coverage-reviewer prompt. Related: [[reference_workflow_runtime_contract]].",
+      "remote": {
+        "github": {
+          "url": "https://github.com/KemonoNeco/Straitjacket/issues/14",
+          "number": 14
+        }
+      }
+    },
+    {
+      "id": "bug-2026-05-29-03",
+      "title": "[tdd-cycle] no surfaced-bug-capture gate — structured bug findings can be dropped without filing",
+      "created": "2026-05-29",
+      "status": "mirrored",
+      "severity": "medium",
+      "summary": "The orchestration has no gate forcing the main session to drain structured bug findings into the ledger before declaring a run done. Subagents already RETURN findings as data (tdd-cycle.js collects a `surfacedBugs` array from green-check `all_fail` units; the audit skill emits `bug_record` dispositions), and STAGES.md rule 7 + the tdd `surfaced_bug` side-call route them to report-bug — but the routing is ADVISORY (model discipline), not mechanically gated. A run can emit ready_to_commit:true (or an audit can finish) with surfaced bugs left uncaptured and nothing fails. The surfaced-bug reflex is therefore not enforced, only encouraged.",
+      "steps_to_reproduce": [
+        "Run a tdd-cycle (or audit) that surfaces a bug as structured output (e.g. a green-check `all_fail` unit -> surfacedBugs entry, or an audit `bug_record` disposition).",
+        "Observe nothing requires the orchestrator to file each surfaced finding into .straitjacket/bugs.json before completing.",
+        "Confirm ready_to_commit / run-complete can be reached with uncaptured surfaced bugs — the reflex rests on model discipline, not a gate."
+      ],
+      "expected": "A deterministic gate (same loud-fail pattern as run_new_tests `nothing_to_run` / name-survival) cross-checks each structured surfaced-bug finding against `.straitjacket/bugs.json`; the orchestrator cannot emit a done/ready_to_commit verdict while any surfaced finding is unfiled (or not explicitly dispositioned). This covers BOTH the Agent path and the workflow path because the orchestrator runs the gate (unlike the PostToolUse Agent hook, which does not fire for workflow-spawned agents).",
+      "actual": "No such gate exists. Surfaced bugs are routed to report-bug only by advisory instruction (STAGES.md rule 7, the tdd surfaced_bug side-call). A run can complete with surfaced bugs uncaptured and nobody fails the build.",
+      "suspect_files": [
+        "workflows/tdd-cycle.js",
+        "skills/audit/SKILL.md",
+        "skills/tdd/SKILL.md",
+        "docs/STAGES.md",
+        "src/commands/"
+      ],
+      "suspect_symbol": "NEW: a `straitjacket` CLI gate (pure decision helper + run shell) that verifies surfaced findings are captured in bugs.json; consumed by the orchestrator's done/ready_to_commit branch",
+      "intended_behavior_seed": "A surfaced-bug-capture gate returns ok=false (listing the uncaptured findings) whenever a run's structured surfaced-bug findings have no corresponding .straitjacket/bugs.json entry, and the orchestrator must not emit ready_to_commit/done while ok=false — so the surfaced-bug reflex is mechanically enforced, not merely advised.",
+      "error_signature": "",
+      "environment": "straitjacket plugin orchestration (workflows + skills + CLI). Design discussion 2026-05-29. The CLI gate piece is testable Rust (fits the src/commands pure-helper + run pattern); the orchestrator branch wiring is live-run-guarded.",
+      "discovered_during": "straitjacket:triage of bug-2026-05-29-01 — design discussion on enforcing the surfaced-bug reflex (2026-05-29)",
+      "labels": [
+        "orchestration",
+        "tdd-cycle",
+        "enforcement",
+        "surfaced-bug"
+      ],
+      "notes": "User asked whether the plugin should ENFORCE report-bug being called when a bug is found by main or a subagent. Key constraints established: (1) hooks fire on TOOL events, not on the semantic moment 'a bug was found' — so a literal hook trigger on discovery is impossible; (2) workflow-spawned subagents cannot spawn sub-agents or invoke skills and the adversarial/lens agents are Read/Grep/Glob-only (no Bash) so they CANNOT write the ledger; (3) the main session is the single ledger writer by invariant. Therefore the enforceable design is orchestrator-drains-findings backed by a CLI gate, NOT per-agent report-bug calls. The testable lever is the Rust CLI gate; the orchestrator branch + an optional PostToolUse Agent nudge (Agent path only, doesn't fire for workflow agents) are defense-in-depth. Related: [[feedback_surfaced_bug_reflex]], [[reference_workflow_runtime_contract]]. The CLI helper SHOULD be driven through the tdd loop (RED test -> impl) since it is testable Rust.",
+      "remote": {
+        "github": {
+          "url": "https://github.com/KemonoNeco/Straitjacket/issues/15",
+          "number": 15
+        }
+      }
     }
   ]
 }
