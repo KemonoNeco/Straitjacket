@@ -81,7 +81,14 @@ source; branch loudly on `nothing_to_run` — a zero-check is a failure, not a p
 
 - `straitjacket bug-status --repo-root <repo_root> --id <id> --set fixed [--note <test names>]`
   — only with a green test that references/covers the bug.
-- **Commit the savepoint** (QA'd green only — never the `unimplemented!()`/red state).
+- **Commit the savepoint** (QA'd green only — never the `unimplemented!()`/red state). **If the record
+  was `mirrored` with a `remote.github`, the commit message MUST carry a GitHub closing keyword —
+  `Closes <remote.github.url>`** (URL form so it resolves cross-repo; `#<remote.github.number>` works same-repo).
+  GitHub then auto-closes the linked issue **when the PR merges to the default branch** — that, not a
+  fix-time `gh issue close`, is how triage closes the issue: triage's lifecycle ends at the commit and
+  it must not close an issue whose fix could still be rejected in review. Gate it strictly: only on
+  `fixed`, only when `remote.github` exists — a local-only `open` record has no issue to close, and
+  `wontfix`/`duplicate` are out of scope.
 
 ### Won't-fix / duplicate
 
@@ -107,6 +114,17 @@ Per record:
 - **Test(s) added**: the new test name(s) that lock the correct behavior.
 - **Fix**: files + symbols the `implementation-author` touched.
 - **New ledger status** (and the `bug-status` set you applied).
+- **Issue close-out** — for each record flipped to `fixed` that had a remote:
+  - **GitHub**: state that the savepoint commit carries `Closes <remote.github.url>` and the issue
+    auto-closes on PR merge. **Surface `Closes <remote.github.url>` (or the repo-qualified
+    `Closes <remote.github.repo>#<remote.github.number>`) for the PR body too** — triage owns the
+    commit but not the PR, and a squash/rebase merge can drop a commit-message keyword, so the PR
+    body is the strategy-independent close. Use the URL or repo-qualified form, not a bare
+    `#<remote.github.number>`, so it still closes when the PR is in a different repo than the issue.
+    (triage must not create the PR itself.)
+  - **Jira**: a GitHub merge does **not** close a Jira ticket unless a DVCS/smart-commit integration
+    is wired — do not imply it does. Surface `remote.jira.key` so the owner can transition it (and,
+    like GitHub, only post-merge — never a fix-time transition that could outrun review).
 - **🚨 Escalations**: any record that could not be driven to green — surfaced loudly, left `open`.
 
 ## Notes
