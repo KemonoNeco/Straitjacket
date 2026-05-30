@@ -1,0 +1,4 @@
+{
+  "default_destinations": ["local", "github"],
+  "github_repo": "KemonoNeco/Straitjacket"
+}

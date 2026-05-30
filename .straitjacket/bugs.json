@@ -4,7 +4,7 @@
       "id": "bug-2026-05-29-01",
       "title": "[fuzz-setup] cargo-fuzz availability probe is always false (no-subcommand arm exits 2)",
       "created": "2026-05-29",
-      "status": "open",
+      "status": "mirrored",
       "severity": "high",
       "summary": "probe_fuzz_setup's two-arm cargo-fuzz availability check uses `probe_tool(\"cargo\", \"fuzz\") && (cargo fuzz --version succeeds)`. The first arm runs `cargo fuzz` with no subcommand, which cargo-fuzz (clap) rejects as a usage error and exits 2, so `.status().success()` is false and the `&&` short-circuits before the --version arm runs. cargo_fuzz_available is therefore false on every machine where cargo-fuzz is installed (cargo-fuzz always requires a subcommand), causing the fuzz skill to abort with 'toolchain absent'.",
       "steps_to_reproduce": [
@@ -22,6 +22,13 @@
       "environment": "Windows 11, cargo-fuzz v0.13.1, rust nightly 1.97.0 (2026-05-12). The is-terminal v0.4.1 panic in `cargo fuzz --version` is separately dodged by nulled handles (that arm exits 0 here); it is NOT the cause of this false negative.",
       "discovered_during": "straitjacket:fuzz preflight dogfooding (2026-05-29)",
       "labels": ["bug", "fuzz", "toolchain-detection"],
+      "remote": {
+        "github": {
+          "repo": "KemonoNeco/Straitjacket",
+          "number": 12,
+          "url": "https://github.com/KemonoNeco/Straitjacket/issues/12"
+        }
+      },
       "notes": "Root-caused but NOT fixed (no fix instruction given; captured via report-bug as the safe next step). The two-arm probe's comment claims arm 1 'confirms the subcommand exists' — that assumption is wrong: `cargo fuzz` alone is a clap usage error (exit 2), never a success. Fix direction (for a later tdd fix-mode / triage run): drop arm 1 or replace it with a presence check that does not require a no-subcommand invocation to succeed; the --version arm with nulled handles already works and dodges the is-terminal panic. To lift into a test: extract a pure availability-decision helper (over injected probe results) so the && / short-circuit logic is unit-testable without invoking cargo, per the repo's pure-helper-first pattern."
     }
   ]
