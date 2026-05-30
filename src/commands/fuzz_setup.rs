@@ -93,19 +93,20 @@ pub fn find_rust_crates(repo_root: &Path) -> std::io::Result<Vec<RustCrateInfo>>
 
 pub fn probe_fuzz_setup(repo_root: &Path, stack: Stack) -> anyhow::Result<FuzzSetupResult> {
     let rust = if matches!(stack, Stack::Rust | Stack::Both) {
-        // Two-arm probe: `probe_tool` confirms the subcommand exists; the explicit
-        // `--version` confirms it actually runs. Stdout/stderr are nulled both to
-        // avoid noisy probe output AND to dodge the cargo-fuzz v0.13.1 / is-terminal
-        // v0.4.1 terminal-width panic on some Windows consoles (the redirected
-        // handles aren't classified as terminals, so the probe is skipped).
-        let cargo_fuzz_available = probe_tool("cargo", "fuzz")
-            && Command::new("cargo")
-                .args(["fuzz", "--version"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
+        // Availability is decided SOLELY by `cargo fuzz --version`. Do NOT gate it on a
+        // bare `cargo fuzz` probe: cargo-fuzz always demands a subcommand and exits 2
+        // when none is given, so a `probe_tool("cargo","fuzz") && …` short-circuit would
+        // report a real install as "unavailable" (this was bug-2026-05-29-01). Nulling
+        // stdout/stderr both avoids noisy output AND dodges the cargo-fuzz v0.13.1 /
+        // is-terminal v0.4.1 terminal-width panic on some Windows consoles (the
+        // redirected handles aren't classified as terminals, so the probe is skipped).
+        let cargo_fuzz_available = Command::new("cargo")
+            .args(["fuzz", "--version"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
         let crates = find_rust_crates(repo_root)?;
         Some(RustFuzzInfo {
             cargo_fuzz_available,
