@@ -1,28 +1,36 @@
 {
   "bugs": [
     {
-      "id": "bug-2026-05-29-01",
-      "title": "[fuzz-setup] cargo-fuzz availability probe is always false (no-subcommand arm exits 2)",
+      "actual": "cargo_fuzz_available is false whenever cargo-fuzz is installed, because arm 1 (`cargo fuzz` with no subcommand) exits 2 and short-circuits the && before the working --version arm is evaluated. The fuzz skill then aborts with 'toolchain absent'.",
       "created": "2026-05-29",
-      "status": "open",
+      "discovered_during": "straitjacket:fuzz preflight dogfooding (2026-05-29)",
+      "environment": "Windows 11, cargo-fuzz v0.13.1, rust nightly 1.97.0 (2026-05-12). The is-terminal v0.4.1 panic in `cargo fuzz --version` is separately dodged by nulled handles (that arm exits 0 here); it is NOT the cause of this false negative.",
+      "error_signature": "error: 'cargo-fuzz.exe' requires a subcommand but one was not provided  [subcommands: init, add, build, ... run, ...] ; arm exit code 2 -> .status().success() == false",
+      "expected": "cargo_fuzz_available is true when cargo-fuzz is installed and runnable (e.g. `cargo fuzz --version` succeeds with nulled handles), so the fuzz skill proceeds.",
+      "id": "bug-2026-05-29-01",
+      "intended_behavior_seed": "probe_fuzz_setup reports cargo_fuzz_available == true when cargo-fuzz is installed and runnable, and must not require `cargo fuzz` with no subcommand to exit zero (cargo-fuzz always demands a subcommand and exits 2 with none).",
+      "labels": [
+        "bug",
+        "fuzz",
+        "toolchain-detection"
+      ],
+      "notes": [
+        "Fixed via triage fix-mode. RED->GREEN test commands::fuzz_setup::tests::decide_cargo_fuzz_available_is_version_ok_regardless_of_no_subcommand_arm pins the (false,true)->true discriminator; extracted pure decide_cargo_fuzz_available helper and rewired probe_fuzz_setup through it, deleting the buggy inline && short-circuit."
+      ],
       "severity": "high",
-      "summary": "probe_fuzz_setup's two-arm cargo-fuzz availability check uses `probe_tool(\"cargo\", \"fuzz\") && (cargo fuzz --version succeeds)`. The first arm runs `cargo fuzz` with no subcommand, which cargo-fuzz (clap) rejects as a usage error and exits 2, so `.status().success()` is false and the `&&` short-circuits before the --version arm runs. cargo_fuzz_available is therefore false on every machine where cargo-fuzz is installed (cargo-fuzz always requires a subcommand), causing the fuzz skill to abort with 'toolchain absent'.",
+      "status": "fixed",
       "steps_to_reproduce": [
         "On a machine with cargo-fuzz installed (`which cargo-fuzz` resolves) and nightly present.",
         "Run `straitjacket fuzz-setup --repo-root . --stack rust`.",
         "Observe `rust.cargo_fuzz_available: false` despite the toolchain being installed and functional.",
         "Confirm root cause: `cargo fuzz` (no subcommand) exits 2; `cargo fuzz --version >/dev/null 2>&1` exits 0."
       ],
-      "expected": "cargo_fuzz_available is true when cargo-fuzz is installed and runnable (e.g. `cargo fuzz --version` succeeds with nulled handles), so the fuzz skill proceeds.",
-      "actual": "cargo_fuzz_available is false whenever cargo-fuzz is installed, because arm 1 (`cargo fuzz` with no subcommand) exits 2 and short-circuits the && before the working --version arm is evaluated. The fuzz skill then aborts with 'toolchain absent'.",
-      "suspect_files": ["src/commands/fuzz_setup.rs"],
+      "summary": "probe_fuzz_setup's two-arm cargo-fuzz availability check uses `probe_tool(\"cargo\", \"fuzz\") && (cargo fuzz --version succeeds)`. The first arm runs `cargo fuzz` with no subcommand, which cargo-fuzz (clap) rejects as a usage error and exits 2, so `.status().success()` is false and the `&&` short-circuits before the --version arm runs. cargo_fuzz_available is therefore false on every machine where cargo-fuzz is installed (cargo-fuzz always requires a subcommand), causing the fuzz skill to abort with 'toolchain absent'.",
+      "suspect_files": [
+        "src/commands/fuzz_setup.rs"
+      ],
       "suspect_symbol": "crate::commands::fuzz_setup::probe_fuzz_setup",
-      "intended_behavior_seed": "probe_fuzz_setup reports cargo_fuzz_available == true when cargo-fuzz is installed and runnable, and must not require `cargo fuzz` with no subcommand to exit zero (cargo-fuzz always demands a subcommand and exits 2 with none).",
-      "error_signature": "error: 'cargo-fuzz.exe' requires a subcommand but one was not provided  [subcommands: init, add, build, ... run, ...] ; arm exit code 2 -> .status().success() == false",
-      "environment": "Windows 11, cargo-fuzz v0.13.1, rust nightly 1.97.0 (2026-05-12). The is-terminal v0.4.1 panic in `cargo fuzz --version` is separately dodged by nulled handles (that arm exits 0 here); it is NOT the cause of this false negative.",
-      "discovered_during": "straitjacket:fuzz preflight dogfooding (2026-05-29)",
-      "labels": ["bug", "fuzz", "toolchain-detection"],
-      "notes": "Root-caused but NOT fixed (no fix instruction given; captured via report-bug as the safe next step). The two-arm probe's comment claims arm 1 'confirms the subcommand exists' — that assumption is wrong: `cargo fuzz` alone is a clap usage error (exit 2), never a success. Fix direction (for a later tdd fix-mode / triage run): drop arm 1 or replace it with a presence check that does not require a no-subcommand invocation to succeed; the --version arm with nulled handles already works and dodges the is-terminal panic. To lift into a test: extract a pure availability-decision helper (over injected probe results) so the && / short-circuit logic is unit-testable without invoking cargo, per the repo's pure-helper-first pattern."
+      "title": "[fuzz-setup] cargo-fuzz availability probe is always false (no-subcommand arm exits 2)"
     }
   ]
 }

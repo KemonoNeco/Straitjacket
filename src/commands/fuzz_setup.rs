@@ -93,19 +93,23 @@ pub fn find_rust_crates(repo_root: &Path) -> std::io::Result<Vec<RustCrateInfo>>
 
 pub fn probe_fuzz_setup(repo_root: &Path, stack: Stack) -> anyhow::Result<FuzzSetupResult> {
     let rust = if matches!(stack, Stack::Rust | Stack::Both) {
-        // Two-arm probe: `probe_tool` confirms the subcommand exists; the explicit
-        // `--version` confirms it actually runs. Stdout/stderr are nulled both to
-        // avoid noisy probe output AND to dodge the cargo-fuzz v0.13.1 / is-terminal
-        // v0.4.1 terminal-width panic on some Windows consoles (the redirected
-        // handles aren't classified as terminals, so the probe is skipped).
-        let cargo_fuzz_available = probe_tool("cargo", "fuzz")
-            && Command::new("cargo")
-                .args(["fuzz", "--version"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .map(|s| s.success())
-                .unwrap_or(false);
+        // Two-arm probe, decided by `decide_cargo_fuzz_available`. Availability hinges
+        // solely on the `--version` arm: cargo-fuzz always demands a subcommand and
+        // exits 2 when none is given, so the bare `cargo fuzz` probe is informational
+        // only and must NOT gate the decision (a naive `&&` would short-circuit a real
+        // install to "unavailable"). Stdout/stderr are nulled on both probes to avoid
+        // noisy output AND to dodge the cargo-fuzz v0.13.1 / is-terminal v0.4.1
+        // terminal-width panic on some Windows consoles (the redirected handles aren't
+        // classified as terminals, so the probe is skipped).
+        let no_subcommand_ok = probe_tool("cargo", "fuzz");
+        let version_ok = Command::new("cargo")
+            .args(["fuzz", "--version"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false);
+        let cargo_fuzz_available = decide_cargo_fuzz_available(no_subcommand_ok, version_ok);
         let crates = find_rust_crates(repo_root)?;
         Some(RustFuzzInfo {
             cargo_fuzz_available,
@@ -136,6 +140,16 @@ pub fn probe_fuzz_setup(repo_root: &Path, stack: Stack) -> anyhow::Result<FuzzSe
     };
 
     Ok(FuzzSetupResult { rust, csharp })
+}
+
+/// Decides whether cargo-fuzz is available based on injected probe results.
+/// `no_subcommand_ok`: whether `cargo fuzz` (no subcommand) exited zero.
+/// `version_ok`: whether `cargo fuzz --version` exited zero.
+/// Availability is determined solely by `version_ok`; cargo-fuzz always demands a
+/// subcommand and exits 2 when none is given, so `no_subcommand_ok` is irrelevant.
+pub fn decide_cargo_fuzz_available(no_subcommand_ok: bool, version_ok: bool) -> bool {
+    let _ = no_subcommand_ok;
+    version_ok
 }
 
 pub fn run(args: Args) -> anyhow::Result<()> {
@@ -253,5 +267,21 @@ mod tests {
         let r = probe_fuzz_setup(td.path(), Stack::Both).unwrap();
         assert!(r.rust.is_some());
         assert!(r.csharp.is_some());
+    }
+
+    // Truth table: cargo-fuzz availability depends solely on version_ok, not
+    // no_subcommand_ok. cargo-fuzz always demands a subcommand and exits 2
+    // without one, so the no_subcommand_ok arm is irrelevant to availability.
+    #[test]
+    fn decide_cargo_fuzz_available_is_version_ok_regardless_of_no_subcommand_arm() {
+        // Discriminating case: cargo-fuzz installed (version_ok=true) but the
+        // no-subcommand probe exits 2 (no_subcommand_ok=false). Must be true.
+        assert!(decide_cargo_fuzz_available(false, true));
+        // Both probes succeed — also available.
+        assert!(decide_cargo_fuzz_available(true, true));
+        // Neither probe succeeds — not available.
+        assert!(!decide_cargo_fuzz_available(false, false));
+        // No-subcommand probe succeeds but version probe fails — not available.
+        assert!(!decide_cargo_fuzz_available(true, false));
     }
 }
