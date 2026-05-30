@@ -160,6 +160,18 @@ exists yet, so the reviewer also pre-assigns `target_stub_path` (where the `unim
 4. **Isolated specialists never see the diff** (or "what changed" framing, or transcripts). The `PreToolUse` hook scans adversarial prompts for `--- a/`, `+++ b/`, `git diff` (Agent path only). Defense-in-depth: never inline diff text yourself.
 5. **Parallel spawns go in a single message** (Agent path) / one `parallel()` batch (workflow path).
 6. **JSON parse failures:** retry once with a "return only valid JSON matching <schema>" prefix, then abort that unit.
+7. **Surfaced-bug reflex — capture, don't pivot.** When a run surfaces a real defect you were
+   **not** instructed to fix — in the *target* code **or** in straitjacket's *own* tooling
+   (a wrong CLI verdict, a false-negative probe, a broken helper) — the safe next step is
+   `straitjacket:report-bug`: write the ledger record, then **resume the task or stop**. Do
+   **not** begin fixing it, and do **not** pivot to investigating or consulting-on a fix
+   (fixing is its own separate instruction; absent it, the chain is *capture → continue*).
+   Map what you know onto the BugRecord bridge fields (`suspect_files` / `suspect_symbol` /
+   `intended_behavior_seed`) so a later `tdd` fix-mode / `triage` run can lift it without
+   re-deriving it. This applies to **preflight too**: a STOP caused by a *suspected* straitjacket
+   bug (e.g. a toolchain reported absent that you can see is installed) is captured, not just
+   announced. The only skills that fix in-run are `tdd` and `triage`; every other skill that
+   meets a bug it won't fix routes through this reflex.
 
 ## Severity axes
 

@@ -76,9 +76,10 @@ to guarantee mechanically. Never present a diagnosis over a dirty tree.
 1. **`--id` record given** → write back the analyst's findings to that record (you may use the
    ledger directly here): refresh `suspect_files` / `suspect_symbol` / `intended_behavior_seed`,
    append the `root_cause` + `reproduction` to `notes`. Leave `status` as-is (debug doesn't fix).
-2. **Inline bug, real defect** → offer to capture it via `straitjacket:report-bug` (map the
-   analyst's `suspect_files` / `suspect_symbol` / `intended_behavior_seed` straight onto the
-   BugRecord fields) so the diagnosis becomes a durable, liftable ledger record.
+2. **Inline bug, real defect** → capture it via `straitjacket:report-bug` (the surfaced-bug
+   reflex, [STAGES.md](../../docs/STAGES.md) rule 7): map the analyst's `suspect_files` /
+   `suspect_symbol` / `intended_behavior_seed` straight onto the BugRecord fields so the diagnosis
+   becomes a durable, liftable ledger record. Debug diagnoses, it does not fix — the fix is `triage`.
 3. **Reproduction failed** → say so plainly. An unreproduced symptom is reported as a hypothesis
    with what was tried, not as a root cause.
 

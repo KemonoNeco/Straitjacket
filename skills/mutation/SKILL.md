@@ -17,6 +17,7 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 1. **You are the single writer** of any run-state you persist; the stage returns data, you merge.
 2. **A proposal describes the under-tested BEHAVIOR CLASS, never the mutant.** "X must reject a zero-length header" — not "kill the `< ` → `<=` mutant at line 42". Anchoring a test to a mutant produces a brittle, vacuous test.
 3. **`nothing_scanned`/zero-mutant is loud.** A tool that scanned nothing (absent / empty scope / build failure) is reported distinctly from a real 100% mutation score.
+4. **Surfaced-bug reflex** ([STAGES.md](../../docs/STAGES.md) rule 7): if this run hits a real defect it is not told to fix — in the target or in straitjacket's own tooling — capture it via `straitjacket:report-bug`, then resume or stop. Never pivot to fixing or consulting on a fix; turning a surviving-mutant gap or a captured bug into a fix is a `tdd`/`triage` job.
 
 ## Args
 
@@ -28,7 +29,7 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 
 1. Confirm a git repo; resolve `repo_root`; tree should be **green** (mutation is in the green-baseline preflight matcher — mutants are only meaningful against a passing suite). Generate `run_id`.
 2. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
-3. Probe the mutation tool (`cargo mutants --version` / `dotnet stryker --version`) → `<run_id>/tooling.json`. **If absent → STOP** with a clear message (mutation has no static fallback).
+3. Probe the mutation tool (`cargo mutants --version` / `dotnet stryker --version`) → `<run_id>/tooling.json`. **If genuinely absent → STOP** with a clear message (mutation has no static fallback). If the tool is reported absent but you can see it is installed, treat it as a straitjacket false-negative probe bug and apply the surfaced-bug reflex (capture via `report-bug`, then STOP) rather than a bare "tool missing".
 
 ## Run the mutation pass
 
