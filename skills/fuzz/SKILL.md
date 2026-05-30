@@ -15,6 +15,7 @@ this skill does not restate it.
 1. **You are the single writer** of `work-units.json`; `reproducer-to-test` appends the mined regression units and you merge.
 2. **A harness catches only the exceptions the contract allows.** Catching everything defeats the fuzzer — the `fuzz-harness-author` owns this; don't relax it.
 3. **Every crash becomes a committed, deterministic regression test** named by a hash of the input bytes — that is the durable output, not the transient corpus.
+4. **Surfaced-bug reflex** ([STAGES.md](../../docs/STAGES.md) rule 7): any real defect this run finds but is not told to fix — including a bug in straitjacket's own tooling — is captured via `straitjacket:report-bug`, then you resume or stop. Never pivot to fixing it or to consulting on a fix.
 
 ## Args
 
@@ -26,7 +27,9 @@ this skill does not restate it.
 
 1. Confirm a git repo; resolve `repo_root`; tree should be **green** (fuzz is in the green-baseline preflight matcher). Generate `run_id`.
 2. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
-3. `straitjacket fuzz-setup --repo-root <repo_root> --stack <stack>` — probe the fuzz toolchain (Rust: `cargo-fuzz` + nightly; C#: SharpFuzz) and list existing fuzz targets. **If the toolchain is absent → STOP** with a clear message (fuzzing cannot degrade to static — unlike audit/mutation, there is no fallback). Record presence in `<run_id>/tooling.json`.
+3. `straitjacket fuzz-setup --repo-root <repo_root> --stack <stack>` — probe the fuzz toolchain (Rust: `cargo-fuzz` + nightly; C#: SharpFuzz) and list existing fuzz targets. Record presence in `<run_id>/tooling.json`.
+   - **Toolchain genuinely absent → STOP** with a clear message (fuzzing cannot degrade to static — unlike audit/mutation, there is no fallback), naming how to install it.
+   - **Toolchain reported absent but you can see it is installed** (e.g. `cargo-fuzz` resolves on `PATH` / `~/.cargo/bin`, nightly is present) → this is a **straitjacket false-negative probe bug**, not a missing tool. Capture it via the surfaced-bug reflex ([STAGES.md](../../docs/STAGES.md) rule 7) — `straitjacket:report-bug` against `src/commands/fuzz_setup.rs` — then STOP and tell the user the run is blocked on a captured plugin bug (do not fix the probe inline; that is a `tdd`/`triage` job).
 
 ## Run the fuzz pass
 
@@ -39,7 +42,7 @@ this skill does not restate it.
      --work-units-file <run_id>/work-units.json
    ```
    This writes a deterministic regression test (named by the input hash) into a `regressions/` test module and appends a WorkUnit.
-4. **Verify** the mined regression tests run: `straitjacket run-new-tests --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>` (branch on `nothing_to_run`). A mined test that does not now fail-then-pin the crash is a `surfaced_bug` — escalate, do not silence.
+4. **Verify** the mined regression tests run: `straitjacket run-new-tests --work-units-file <run_id>/work-units.json --stack <stack> --log-dir <run_id>` (branch on `nothing_to_run`). A mined test that does not now fail-then-pin the crash is a `surfaced_bug` — escalate via the surfaced-bug reflex (`straitjacket:report-bug`; [STAGES.md](../../docs/STAGES.md) rule 7), do not silence.
 
 ## Final summary (present verbatim)
 

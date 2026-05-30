@@ -22,7 +22,7 @@ often audit *because* the tree is unhealthy.
 1. **You are the single writer** of `<repo>/.claude-regression/<run_id>/audit-findings.json`. The stage returns data; you merge + route.
 2. **Refutation is the spine, not a flag.** Never report an unrefuted LLM finding; the stage's refute pass + synthesis produce `confirmed_findings`.
 3. **`nothing_scanned` is loud.** A mechanical runner that scanned nothing (tool absent / empty scope) is reported distinctly from a clean scan — never silently treated as "no issues."
-4. **Analysis-only.** Findings route to a report, the bug ledger, or a proposal — audit does not author or fix.
+4. **Analysis-only** — the surfaced-bug reflex ([STAGES.md](../../docs/STAGES.md) rule 7). Findings route to a report, the bug ledger (`report-bug`), or a proposal — audit never authors, fixes, or pivots to consulting on a fix; lifting a finding into a fix is a `tdd`/`triage` job.
 
 ## Args
 
