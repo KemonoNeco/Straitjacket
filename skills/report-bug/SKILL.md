@@ -22,7 +22,7 @@ A single tracked ledger in the **consumer repo** (the project being worked on, n
 <repo_root>/.straitjacket/bugs.json
 ```
 
-Shape: `{ "bugs": [ BugRecord, ... ] }`. The record schema is `schemas/bug-record.schema.json` (this plugin). **This file is meant to be committed** — it is the durable bug log and the test-context source. Do NOT add it to `.gitignore` (note: `.claude-regression/` is gitignored per-run state; `.straitjacket/bugs.json` is a deliberately different, tracked location — don't let a gitignore edit sweep it up).
+Shape: `{ "bugs": [ BugRecord, ... ] }`. The record schema is `schemas/bug-record.schema.json` (this plugin). **This file is meant to be committed** — it is the durable bug log and the test-context source. Do NOT add it to `.gitignore` (note: per-run state under `.straitjacket/<run_id>/` is gitignored via the scoped `.straitjacket/*/` pattern; `.straitjacket/bugs.json` is a top-level file in the same dir that the scoped pattern deliberately does NOT match — don't widen the ignore to a bare `.straitjacket/`, which would sweep it up).
 
 ### The three consumption-bridge fields
 

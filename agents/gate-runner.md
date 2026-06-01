@@ -20,7 +20,7 @@ workflow serializes gate calls, so there is never a concurrent writer.
 
 - `repo_root`: absolute path to the working tree. Run the command from here.
 - `work_units`: the full work-units JSON (array or `{"work_units":[...]}`). Write it to `work_units_path` first.
-- `work_units_path`: where to write it (e.g. `<repo_root>/.claude-regression/<run_id>/work-units.json`).
+- `work_units_path`: where to write it (e.g. `<repo_root>/.straitjacket/<run_id>/work-units.json`).
 - `gate`: which gate to run, one of:
   - `run-new-tests` — with an `expect` of `fail` (red-check) or `pass` (green-check).
   - `verify-new-tests-compile` — compile-only check after authoring.

@@ -154,7 +154,7 @@ exists yet, so the reviewer also pre-assigns `target_stub_path` (where the `unim
 
 ## Cardinal rules (shared by every skill)
 
-1. **You are the single writer** of `<repo>/.claude-regression/<run_id>/work-units.json`. Subagents/stages return JSON; you merge.
+1. **You are the single writer** of `<repo>/.straitjacket/<run_id>/work-units.json`. Subagents/stages return JSON; you merge.
 2. **Subagent prompts must be self-contained.** Agents have no memory of prior runs; pass work-unit data + source paths inline.
 3. **`intended_behavior` is immutable** once the `coverage-reviewer` writes it. Reject any output that rewrites it.
 4. **Isolated specialists never see the diff** (or "what changed" framing, or transcripts). The `PreToolUse` hook scans adversarial prompts for `--- a/`, `+++ b/`, `git diff` (Agent path only). Defense-in-depth: never inline diff text yourself.
@@ -191,9 +191,10 @@ Two deliberate severity scales coexist - this is **by design, not drift**:
 
 ## Run-state layout
 
-All per-run artifacts live under `<repo>/.claude-regression/<run_id>/` (run_id =
-`YYYYMMDDThhmmss-<4hex>`), gitignored: `work-units.json`, `tooling.json`, `test-snapshot.json`,
-`state.json`, logs, `quarantine/`, `staged-tests/`, `audit-findings.json` (the audit skill's
-transient findings - distinct from `work-units.json`). The **bug ledger** at
-`<repo>/.straitjacket/bugs.json` is the exception - it is **tracked/committed**, the durable
-hand-off between `report-bug`, `audit`, `triage`, and a later fix-mode run.
+All per-run artifacts live under `<repo>/.straitjacket/<run_id>/` (run_id =
+`YYYYMMDDThhmmss-<4hex>`), gitignored via `.straitjacket/*/`: `work-units.json`, `tooling.json`,
+`test-snapshot.json`, `state.json`, logs, `quarantine/`, `staged-tests/`, `audit-findings.json`
+(the audit skill's transient findings - distinct from `work-units.json`). The **bug ledger** at
+`<repo>/.straitjacket/bugs.json` is **tracked/committed** — a top-level file under `.straitjacket/`
+intentionally outside the `*/` glob — the durable hand-off between `report-bug`, `audit`,
+`triage`, and a later fix-mode run.

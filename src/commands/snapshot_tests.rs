@@ -35,7 +35,7 @@ pub struct TestSnapshot {
 /// `#[test]` / `#[cfg(test)]`; C# `.cs` under `*.Tests*` dirs or containing
 /// `[Fact` / `[Theory` / `[TestMethod`), SHA-256-hashes each, and returns a
 /// manifest. Excluded dirs pruned at descent: `target`, `node_modules`,
-/// `bin`, `obj`, `.git`, `.claude-regression`.
+/// `bin`, `obj`, `.git`, `.straitjacket`.
 pub fn snapshot_test_files(repo_root: &Path) -> anyhow::Result<TestSnapshot> {
     let rs_files = walk_source_files(repo_root, SOURCE_TREE_EXCLUDES, &["rs"])
         .with_context(|| format!("walk .rs files under {}", repo_root.display()))?;

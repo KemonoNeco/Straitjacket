@@ -19,7 +19,7 @@ often audit *because* the tree is unhealthy.
 
 ## Cardinal rules
 
-1. **You are the single writer** of `<repo>/.claude-regression/<run_id>/audit-findings.json`. The stage returns data; you merge + route.
+1. **You are the single writer** of `<repo>/.straitjacket/<run_id>/audit-findings.json`. The stage returns data; you merge + route.
 2. **Refutation is the spine, not a flag.** Never report an unrefuted LLM finding; the stage's refute pass + synthesis produce `confirmed_findings`.
 3. **`nothing_scanned` is loud.** A mechanical runner that scanned nothing (tool absent / empty scope) is reported distinctly from a clean scan — never silently treated as "no issues."
 4. **Analysis-only** — the surfaced-bug reflex ([STAGES.md](../../docs/STAGES.md) rule 7). Findings route to a report, the bug ledger (`report-bug`), or a proposal — audit never authors, fixes, or pivots to consulting on a fix; lifting a finding into a fix is a `tdd`/`triage` job.
@@ -35,7 +35,7 @@ often audit *because* the tree is unhealthy.
 ## Preflight
 
 1. Confirm a git repo; resolve `repo_root`. (No green-baseline gate — audit is read-only.)
-2. Generate `run_id`; create `<repo_root>/.claude-regression/<run_id>/`.
+2. Generate `run_id`; create `<repo_root>/.straitjacket/<run_id>/`.
 3. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
 4. **Probe mechanical tools** for the stack and keep only the available ones (degrade gracefully):
    - Rust: `clippy-dead-code` (always — clippy ships with rust), `cargo-audit`, `cargo-deny`, `cargo-geiger`, `cargo-udeps` (each only if installed).
@@ -85,5 +85,5 @@ mechanical_findings, lens_coverage, refutation_summary, synthesis_status }`. Wri
 ## Notes
 
 - Mostly Opus turns (the lens finders + refuter + synthesis) plus Haiku `audit-runner`s.
-- All artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
+- All artifacts live under `<repo>/.straitjacket/<run_id>/`; the bug ledger at
   `<repo>/.straitjacket/bugs.json` is tracked/committed. The CLI is on `PATH` via the plugin's `bin/`.

@@ -139,7 +139,7 @@ This plugin's reason to exist is **"no fix without a failing test first."** Hold
 ## Git workflow notes
 
 - The per-platform `bin/straitjacket-<triple>[.exe]` binaries (~3MB each) plus the `bin/straitjacket` / `bin/straitjacket.cmd` launchers are committed. Don't gitignore them. `.gitattributes` keeps the sh launcher LF-only (a CRLF shebang breaks `/bin/sh`) and marks the binaries `binary`.
-- `target/`, `.claude-regression/` (per-run state from the skills themselves), and `2026-*-*.txt` (session transcript files) are gitignored.
+- `target/`, `.straitjacket/*/` (per-run state from the skills themselves), and `2026-*-*.txt` (session transcript files) are gitignored. `.straitjacket/bugs.json` is also gitignored in this repo (local-only policy).
 - The repo uses `Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>` in commits where Claude Code contributed.
 
 ## Available memory

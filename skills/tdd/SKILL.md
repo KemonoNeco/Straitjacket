@@ -44,8 +44,8 @@ summary (audit-after, not pre-empt). Your residual role is thin: start from a kn
 
 1. Confirm the working dir is a git repo (else abort); resolve `repo_root`. The tree should be
    **green** (the `UserPromptExpansion` preflight gate fires for `tdd`).
-2. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.claude-regression/<run_id>/`;
-   append `.claude-regression/` to `.gitignore` if absent.
+2. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.straitjacket/<run_id>/`;
+   append `.straitjacket/*/` to `.gitignore` if absent (scoped to subdirs so `.straitjacket/bugs.json` stays committable).
 3. `straitjacket detect-stack --repo-root <repo_root>` → `stack` (+ `cargo_target`).
 4. `straitjacket snapshot-tests --repo-root <repo_root> --out-file <run_id>/test-snapshot.json`.
 5. Probe tooling (cargo-mutants / dotnet-stryker) → `<run_id>/tooling.json`.
@@ -57,7 +57,7 @@ summary (audit-after, not pre-empt). Your residual role is thin: start from a kn
 
 - **Present →** `straitjacket workflow-script tdd-cycle` (Bash) emits the script; capture it
   verbatim and call `Workflow({script: <captured>, args})` with:
-  - `spec`, `stack`, `repoRoot`, `outputDir` (`<repo_root>/.claude-regression/<run_id>`),
+  - `spec`, `stack`, `repoRoot`, `outputDir` (`<repo_root>/.straitjacket/<run_id>`),
     `workUnitsPath` (`outputDir + "/work-units.json"`), `testSnapshotPath`,
     `toolingAvailable` (from `tooling.json`), `maxRounds`, `quick`.
   - **Never** put a diff or author transcript in `args` — agents Read the spec + source themselves.
@@ -111,6 +111,6 @@ no_mutation_audit, ready_to_commit, error }`.
 
 - The cycle is mostly Opus turns (coverage, authors, the adversarial stack, implementation) plus
   Haiku runners (mutation, gate-runner); it iterates up to `--max-rounds`.
-- All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
+- All run artifacts live under `<repo>/.straitjacket/<run_id>/`; the bug ledger at
   `<repo>/.straitjacket/bugs.json` is tracked/committed. The `straitjacket` CLI is on `PATH`
   via the plugin's `bin/`.

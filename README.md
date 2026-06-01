@@ -41,7 +41,7 @@ claude
 > /straitjacket:tdd "add a function that parses a header and rejects inputs over 4 KiB"
 ```
 
-The skill writes tests (and, in tdd, implementation) directly into your repo. All transient state lives under `.claude-regression/<run_id>/` (auto-gitignored on first run); the bug ledger at `.straitjacket/bugs.json` is tracked/committed.
+The skill writes tests (and, in tdd, implementation) directly into your repo. All transient state lives under `.straitjacket/<run_id>/` (auto-gitignored on first run via `.straitjacket/*/`); the bug ledger at `.straitjacket/bugs.json` is tracked/committed.
 
 ## Agents
 

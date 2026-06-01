@@ -22,7 +22,7 @@
 //   spec                inline specification text
 //   stack               "rust" | "csharp" | "both"
 //   repoRoot            absolute repo root
-//   outputDir           <repoRoot>/.claude-regression/<run_id>/  (logs + work-units.json)
+//   outputDir           <repoRoot>/.straitjacket/<run_id>/  (logs + work-units.json)
 //   workUnitsPath       outputDir + "/work-units.json"
 //   testSnapshotPath    snapshot for the end-of-cycle no-mutation audit (optional)
 //   toolingAvailable    string[]  (e.g. ["cargo-mutants"])

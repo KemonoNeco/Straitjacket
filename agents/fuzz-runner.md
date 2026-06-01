@@ -35,7 +35,7 @@ Execute one fuzz harness for the assigned time budget. Mechanical role: invoke t
 
 2. **Run with a hard timeout.** The fuzzer's own `-max_total_time` is the soft limit. Add a shell-level hard timeout of `time_budget_seconds + 30` as a safety net (in case the fuzzer hangs).
 
-3. **Capture stdout/stderr.** Pipe to `<repo_root>/.claude-regression/<run_id>/fuzz-logs/<harness_name>.log`. Use UTF-8 encoding when writing.
+3. **Capture stdout/stderr.** Pipe to `<repo_root>/.straitjacket/<run_id>/fuzz-logs/<harness_name>.log`. Use UTF-8 encoding when writing.
 
 4. **Collect crash artifacts.** After the fuzzer exits, list the artifacts directory:
    - Rust: `<repo_root>/fuzz/artifacts/<harness_name>/`.
