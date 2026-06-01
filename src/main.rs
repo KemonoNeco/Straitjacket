@@ -28,6 +28,8 @@ enum Commands {
     SnapshotTests(commands::snapshot_tests::Args),
     #[command(name = "verify-no-test-mutation")]
     VerifyNoTestMutation(commands::verify_no_test_mutation::Args),
+    #[command(name = "verify-surfaced-bugs-captured")]
+    VerifySurfacedBugsCaptured(commands::verify_surfaced_bugs_captured::Args),
     #[command(name = "verify-new-tests-compile")]
     VerifyNewTestsCompile(commands::verify_new_tests_compile::Args),
     #[command(name = "verify-tree-clean")]
@@ -58,6 +60,9 @@ fn main() -> anyhow::Result<()> {
         Commands::LintCheck(a) => commands::lint_check::run(a),
         Commands::SnapshotTests(a) => commands::snapshot_tests::run(a),
         Commands::VerifyNoTestMutation(a) => commands::verify_no_test_mutation::run(a),
+        Commands::VerifySurfacedBugsCaptured(a) => {
+            commands::verify_surfaced_bugs_captured::run(a)
+        }
         Commands::VerifyNewTestsCompile(a) => commands::verify_new_tests_compile::run(a),
         Commands::VerifyTreeClean(a) => commands::verify_tree_clean::run(a),
         Commands::FuzzSetup(a) => commands::fuzz_setup::run(a),
