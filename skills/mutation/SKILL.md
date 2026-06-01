@@ -48,5 +48,5 @@ authors. A surviving mutant means *no test fails when the code is broken there* 
 
 ## Notes
 
-- A capped Haiku `mutation-runner` team; the proposal-framing is the skill's judgment. Artifacts under `<repo>/.claude-regression/<run_id>/`; the CLI is on `PATH` via the plugin's `bin/`.
+- A capped Haiku `mutation-runner` team; the proposal-framing is the skill's judgment. Artifacts under `<repo>/.straitjacket/<run_id>/`; the CLI is on `PATH` via the plugin's `bin/`.
 - This is the same machinery the `tdd` post-green stage runs inline; here it is exposed stand-alone so a dev can mutation-test without a full cycle.

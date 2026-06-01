@@ -38,8 +38,8 @@ At least one of `<bug>` / `--id` is required; `--files` is an optional scope hin
    → `{clean, dirty_files}`. If `clean` is false, stop and report `dirty_files`: debug operates
    **from a green state** (it is in the `UserPromptExpansion` green-baseline preflight matcher, so
    the gate also fires on invocation). A diagnosis from a dirty tree can't promise a clean savepoint.
-3. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.claude-regression/<run_id>/`;
-   append `.claude-regression/` to `.gitignore` if absent.
+3. Generate `run_id` = `<YYYYMMDDThhmmss>-<4hex>`; create `<repo_root>/.straitjacket/<run_id>/`;
+   append `.straitjacket/*/` to `.gitignore` if absent (scoped to subdirs so `.straitjacket/bugs.json` stays committable).
 4. `straitjacket detect-stack --repo-root <repo_root>` → `stack`.
 5. If `--id` was given, read the record and carry its `suspect_files` / `suspect_symbol` /
    `summary` / `expected` / `actual` into the analyst's prompt as context (not as conclusions).
@@ -97,6 +97,6 @@ to guarantee mechanically. Never present a diagnosis over a dirty tree.
 ## Notes
 
 - One Opus turn (the `root-cause-analyst`) plus a couple of CLI calls; no fan-out, no workflow.
-- All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
+- All run artifacts live under `<repo>/.straitjacket/<run_id>/`; the bug ledger at
   `<repo>/.straitjacket/bugs.json` is tracked/committed. The `straitjacket` CLI is on `PATH`
   via the plugin's `bin/`.

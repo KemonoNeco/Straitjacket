@@ -243,6 +243,6 @@ Per record:
 
 - Mostly the `tdd-cycle` engine's turns (coverage, authors, adversarial stack, implementation) plus
   the `root-cause-analyst` when a record needs debugging first; iterates the cycle to its cap.
-- All run artifacts live under `<repo>/.claude-regression/<run_id>/`; the bug ledger at
+- All run artifacts live under `<repo>/.straitjacket/<run_id>/`; the bug ledger at
   `<repo>/.straitjacket/bugs.json` is **tracked/committed** — it is the durable record this skill
   reads, transitions, and never gitignores. The `straitjacket` CLI is on `PATH` via the plugin's `bin/`.

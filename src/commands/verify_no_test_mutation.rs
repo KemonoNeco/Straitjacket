@@ -179,7 +179,7 @@ mod tests {
         let td = TempDir::new().unwrap();
         write_file(&td, "tests/foo.rs", "#[test] fn t() {}");
         let snapshot = snapshot_test_files(td.path()).unwrap();
-        let snap_path = td.path().join(".claude-regression").join("snap.json");
+        let snap_path = td.path().join(".straitjacket").join("snap.json");
         crate::common::json_io::write_json_file(&snap_path, &snapshot).unwrap();
         let restored: TestSnapshot =
             crate::common::json_io::read_json_file(&snap_path).unwrap();

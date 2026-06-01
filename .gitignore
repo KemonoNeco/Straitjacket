@@ -10,8 +10,9 @@ target/
 # session transcripts (developer-local artifacts)
 2026-*-*.txt
 
-# regression-tests runtime state directories (per-run artifacts)
-.claude-regression/
+# straitjacket runtime state directories (per-run artifacts); scoped to subdirs so
+# .straitjacket/bugs.json and .straitjacket/report-bug.config.json stay committable.
+.straitjacket/*/
 
 # dogfood bug ledger — kept local-only in THIS repo (the canonical copy lives in the
 # primary checkout's working tree). Untracked to avoid per-branch ledger churn across the

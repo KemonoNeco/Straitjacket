@@ -54,5 +54,5 @@ this skill does not restate it.
 
 ## Notes
 
-- A single Opus `fuzz-harness-author` + a capped Haiku `fuzz-runner` team. Artifacts under `<repo>/.claude-regression/<run_id>/`; the `straitjacket` CLI is on `PATH` via the plugin's `bin/`.
+- A single Opus `fuzz-harness-author` + a capped Haiku `fuzz-runner` team. Artifacts under `<repo>/.straitjacket/<run_id>/`; the `straitjacket` CLI is on `PATH` via the plugin's `bin/`.
 - To turn a parked fuzz finding into a fix, hand the reproducer to `tdd` fix-mode / `triage`.

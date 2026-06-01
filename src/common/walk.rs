@@ -5,7 +5,7 @@ use walkdir::{DirEntry, WalkDir};
 /// a project tree for source/manifest files. Covers build outputs (`target`, `bin`,
 /// `obj`, `node_modules`), VCS metadata (`.git`), Claude Code per-project state
 /// (`.claude`, which can host git worktrees of unrelated projects), and this plugin's
-/// own per-run state (`.claude-regression`). Callers should combine this with any
+/// own internal state (`.straitjacket`). Callers should combine this with any
 /// caller-specific extras rather than reinventing the list.
 pub const SOURCE_TREE_EXCLUDES: &[&str] = &[
     "target",
@@ -14,7 +14,7 @@ pub const SOURCE_TREE_EXCLUDES: &[&str] = &[
     "obj",
     ".git",
     ".claude",
-    ".claude-regression",
+    ".straitjacket",
 ];
 
 /// Predicate for `WalkDir::filter_entry`: returns `true` if `entry` should be descended

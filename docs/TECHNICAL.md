@@ -212,10 +212,10 @@ The split is enforced by testability: a `run(args)` that bakes I/O + parsing + J
 
 ## Run-state file lifecycle
 
-Every skill invocation gets a `<repo_root>/.claude-regression/<run_id>/` directory (the directory itself is gitignored automatically - the orchestrator appends `.claude-regression/` to `.gitignore` on first run).
+Every skill invocation gets a `<repo_root>/.straitjacket/<run_id>/` directory (gitignored automatically via `.straitjacket/*/` - the orchestrator appends `.straitjacket/*/` to `.gitignore` on first run if absent).
 
 ```
-.claude-regression/<run_id>/                  run_id = YYYYMMDDThhmmss-<4-char hex>
+.straitjacket/<run_id>/                       run_id = YYYYMMDDThhmmss-<4-char hex>
 ├── work-units.json           Locked WorkUnit list. Single-writer (orchestrator).
 ├── tooling.json              Per-tool presence map (cargo-mutants, cargo-fuzz, ...).
 ├── test-snapshot.json        SHA-256 of every pre-existing test file (Phase 1).
