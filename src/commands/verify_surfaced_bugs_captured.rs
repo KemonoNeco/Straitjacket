@@ -100,13 +100,16 @@ fn is_captured(finding: &SurfacedFinding, ledger: &[BugRecord]) -> bool {
         .target_symbol
         .as_deref()
         .filter(|s| !s.is_empty());
-    let seed = finding
+    // The finding's seed is loop-invariant, so normalize it ONCE here rather
+    // than re-normalizing it for every ledger record below.
+    let normalized_seed = finding
         .intended_behavior_seed
         .as_deref()
-        .filter(|s| !s.is_empty());
+        .filter(|s| !s.is_empty())
+        .map(normalize_seed);
 
     // No present identity field ⇒ cannot confirm capture ⇒ uncaptured.
-    if symbol.is_none() && seed.is_none() {
+    if symbol.is_none() && normalized_seed.is_none() {
         return false;
     }
 
@@ -122,11 +125,11 @@ fn is_captured(finding: &SurfacedFinding, ledger: &[BugRecord]) -> bool {
             Some(s) => record.suspect_symbol.as_deref() == Some(s),
             None => true,
         };
-        let seed_ok = match seed {
-            Some(s) => record
+        let seed_ok = match &normalized_seed {
+            Some(ns) => record
                 .intended_behavior_seed
                 .as_deref()
-                .is_some_and(|r| normalize_seed(r) == normalize_seed(s)),
+                .is_some_and(|r| &normalize_seed(r) == ns),
             None => true,
         };
 
