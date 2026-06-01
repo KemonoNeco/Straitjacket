@@ -12,5 +12,6 @@ pub mod snapshot_tests;
 pub mod validate_work_units;
 pub mod verify_new_tests_compile;
 pub mod verify_no_test_mutation;
+pub mod verify_surfaced_bugs_captured;
 pub mod verify_tree_clean;
 pub mod workflow_script;
