@@ -37,8 +37,10 @@ workflow, the dispatch convention, and the run-state layout — lives once in
 
 - `--id <bug-id>` — triage one record.
 - `--scope <path>` — triage all `open`/`mirrored` records whose `suspect_files` intersect `<path>`.
-- `--github <n|url>[,…]` — triage GitHub issue(s). Each is matched against the ledger by
-  `remote.github.number`; **any with no local record is reverse-mirror imported first** (Preflight
+- `--github <n|url>[,…]` — triage GitHub issue(s). A bare `<n>` is an issue number in the resolved
+  repo; a `<url>` is **parsed to extract `owner`/`repo` + the issue number** (use the parsed number,
+  not the whole URL, everywhere below). Each is matched against the ledger by `remote.github.number`
+  (and `remote.github.repo`); **any with no local record is reverse-mirror imported first** (Preflight
   → ingest). `--github all-open` selects every open issue labeled `bug` in the resolved repo.
 - *(none)* — the **oldest open** record in the ledger.
 - `--max N` — cap how many records to process this run (default 1; raise to drain a backlog).
@@ -47,13 +49,22 @@ workflow, the dispatch convention, and the run-state layout — lives once in
 
 1. Confirm a git repo (else abort); resolve `repo_root`.
 2. Read `<repo>/.straitjacket/bugs.json` (create an empty `{ "bugs": [] }` if absent). Select the
-   target `open`/`mirrored` record(s) per the args, capped at `--max`.
-3. **Ingest any unrecorded target (reverse-mirror import).** For each `--github` issue (or each
+   target `open`/`mirrored` record(s) per the args, capped at `--max`. **EXCLUDE records already
+   dispositioned `verified-by-analysis`** (they carry the `triage:verified-by-analysis` label — see
+   that terminal below) from the *(none)* / `--scope` / `all-open` pools: they are terminal until new
+   evidence and would otherwise be re-debugged on every run (an infinite loop). They are re-processed
+   **only when named explicitly** by `--id` or `--github <that issue>` (an explicit name = "re-open it,
+   I have new evidence").
+3. **Ingest any unrecorded target (reverse-mirror import).** For each `--github` target (or each
    open `bug`-labeled issue under `all-open`) with **no** matching ledger record (matched on
-   `remote.github.number`), pull it into the ledger — **you are the single writer**:
-   - Fetch the issue: `gh issue view <n> --json number,title,body,labels,url` (github MCP fallback
-     if `gh` is absent). Resolve the repo with `gh repo view --json nameWithOwner` — note this may
-     differ from `git remote` if the repo was renamed (`gh` returns the canonical name).
+   `remote.github.number` + `remote.github.repo`), pull it into the ledger — **you are the single
+   writer**:
+   - Resolve the repo: with `gh` present, `gh repo view --json nameWithOwner` (the canonical name —
+     may differ from `git remote` if the repo was renamed). **If `gh` is absent**, take `owner/repo`
+     from the parsed issue URL, else from the github MCP server's repo tool, else parse the `git remote`
+     URL — **do not call `gh repo view` on the `gh`-absent path**.
+   - Fetch the issue: `gh issue view <number> --json number,title,body,labels,url`; **if `gh` is
+     absent**, fetch via the github MCP server instead (e.g. an `issue`/`get` tool with owner/repo/number).
    - **Parse the body — it is (almost always) the inverse of the `report-bug` remote template**
      (`schemas/bug-record.schema.json` / `report-bug`'s "Remote body template"): `## Summary`→`summary`,
      `## Expected`→`expected`, `## Actual`→`actual`, `## Steps to Reproduce`→`steps_to_reproduce`,
@@ -61,7 +72,11 @@ workflow, the dispatch convention, and the run-state layout — lives once in
      `## Fix direction` / `## Expected` text → `intended_behavior_seed` (a contract sentence for the
      *correct* behavior). **If the footer carries `Local id:` `bug-YYYY-MM-DD-NN`, REUSE it verbatim**
      (re-minting an id drifts the record from the issue body); else mint `bug-<today>-NN` per the
-     report-bug id rule.
+     report-bug id rule. **Collision guard:** if that id already exists in the ledger for a
+     *different* issue (different `remote.github.number`/`repo`), do NOT reuse it — mint a fresh
+     unique `bug-<today>-NN` and note the remap in `notes` (ids must be unique, since `bug-status`
+     keys on them). If the id exists for the *same* issue, it is already imported — skip (no second
+     record).
    - Write the record with `status: "mirrored"`, `remote.github = { repo, number, url }`,
      `discovered_during: "imported from GitHub #<n> by straitjacket:triage"`, and `labels` from the
      issue. Validate against `schemas/bug-record.schema.json`. **Do NOT call `report-bug`** for these
@@ -108,12 +123,15 @@ Write the analyst's `root_cause` + `reproduction` + the three bridge fields back
 | Debug result | Target | → Route |
 |---|---|---|
 | `reproduced: true` | testable code (Rust/C# crate) | **Fix mode** (below) |
-| `reproduced: false` (verified by code-trace) | any | **Verified-by-analysis** (terminal) |
+| `reproduced: false` **but confirmed by a high-confidence code-trace** | any | **Verified-by-analysis** (terminal) |
 | reproduced or not | hand-authored orchestration (no test harness) | **Verified-by-analysis** (terminal) |
+| `reproduced: false` **AND not confirmed** (low confidence — the analyst could not reproduce *or* localize it) | testable code | **ESCALATE** — leave `open`/`mirrored` as an unverified claim; do **NOT** mark `verified-by-analysis` (nothing was verified) and do **NOT** enter Fix mode. Surface loudly in the summary with what the analyst tried. |
 
 **Do NOT auto-fall-through into Fix mode after debug.** Fix mode is the tdd loop; it only applies to
-a *reproduced defect in testable code*. A code-trace-only confirmation, or any orchestration target,
-cannot be driven through it — see **Verified-by-analysis** below.
+a *reproduced defect in testable code*. A *high-confidence* code-trace confirmation, or any
+orchestration target, routes to **Verified-by-analysis** below. An **unconfirmed** claim
+(`reproduced: false` *and* no high-confidence code-trace) is **not** verified — it ESCALATES and
+stays `open`; never launder an unconfirmed claim into `verified-by-analysis`.
 
 ### Verified-by-analysis (terminal — fix is out-of-loop)
 
@@ -126,6 +144,10 @@ ceiling is *verification*, not a tested fix:
 - Append the analyst's `root_cause` + code-trace evidence to the record's `notes`; refresh the
   bridge fields. **Leave `status` as `mirrored`/`open` — never flip to `fixed`** (there is no green
   test covering it). Do not enter Fix mode.
+- **Add the `triage:verified-by-analysis` label** to the record (you are the single writer). This is
+  the durable marker Preflight step 2 excludes on, so this record is **not re-debugged on every
+  subsequent run** — it is terminal until someone re-opens it explicitly by `--id`/`--github` with new
+  evidence. Without this marker an unreproduced record would loop back through DEBUG forever.
 - Surface in the summary as **`verified-by-analysis`**, and state plainly that the fix is a
   **hand-authored / live-run-guarded** change outside the tdd loop — *that hand-authored fix is its
   own task, not part of this triage run* unless the user asks for it.
@@ -176,6 +198,10 @@ Not a real defect or already tracked → `straitjacket bug-status --repo-root <r
 - **Fix-mode `error`** (a `nothing_to_run` gate, a name-survival break, the test won't go red, the
   fix can't pass without weakening the test) → do NOT flip the record to `fixed`; leave it `open`,
   surface the error verbatim, and ESCALATE in the summary. A bug that can't be fixed honestly stays open.
+- **Debug could not confirm** (`reproduced: false` *and* no high-confidence code-trace, testable
+  target — the ESCALATE row above) → leave `open`/`mirrored`, do NOT add the
+  `triage:verified-by-analysis` label (it is unverified, not verified), and ESCALATE in the summary
+  with what the analyst tried. Do not launder an unconfirmed claim into a terminal disposition.
 - **Surfaced bugs** (a fix-mode run uncovers a *different* defect) → capture via
   `straitjacket:report-bug` as a new record; never fold it into the one you're triaging.
 - **You remain the single ledger writer** for the whole run — all status transitions and
@@ -187,7 +213,7 @@ Per record:
 
 - **Bug id** + title, and its **disposition**: `imported` (newly reverse-mirrored from a remote
   issue this run) / `debugged → fixed` / `fixed` / `verified-by-analysis (fix out-of-loop)` /
-  `wontfix` / `duplicate` / `escalated (could not fix)`.
+  `wontfix` / `duplicate` / `escalated (could not verify or fix — left open)`.
 - **Test(s) added**: the new test name(s) that lock the correct behavior.
 - **Fix**: files + symbols the `implementation-author` touched.
 - **New ledger status** (and the `bug-status` set you applied).
