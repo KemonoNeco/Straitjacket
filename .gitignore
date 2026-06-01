@@ -13,6 +13,12 @@ target/
 # regression-tests runtime state directories (per-run artifacts)
 .claude-regression/
 
+# dogfood bug ledger — kept local-only in THIS repo (the canonical copy lives in the
+# primary checkout's working tree). Untracked to avoid per-branch ledger churn across the
+# many dev worktrees. NOTE: this is a repo-local policy; the shipped report-bug contract
+# still recommends CONSUMERS commit their .straitjacket/bugs.json.
+.straitjacket/bugs.json
+
 # cargo-mutants run output
 mutants.out/
 
