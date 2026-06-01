@@ -82,6 +82,11 @@ no_mutation_audit, ready_to_commit, error }`.
    then **commit the savepoint** (QA'd green). This is the only commit point.
 4. **`surviving_mutants`** → already fed back into the cycle's own iteration up to `--max-rounds`;
    report any that remain as known coverage gaps.
+5. **Any part of the work not TDD-verifiable** (a piece that landed in non-unit-tested orchestration
+   — `workflows/*.js`, `skills/*/SKILL.md`, `agents/*.md`, `hooks.json` — or otherwise has no test
+   seam) → before declaring done, **verify it via `straitjacket:audit`** scoped to those file(s)
+   ([STAGES.md](../../docs/STAGES.md) rule 8) and state the basis (*audit-checked + live-run-guarded*,
+   not test-backed). Do not let an untestable slice ride out on "live-run-guarded" alone.
 
 ## Final summary (present verbatim)
 

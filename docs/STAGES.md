@@ -172,6 +172,15 @@ exists yet, so the reviewer also pre-assigns `target_stub_path` (where the `unim
    bug (e.g. a toolchain reported absent that you can see is installed) is captured, not just
    announced. The only skills that fix in-run are `tdd` and `triage`; every other skill that
    meets a bug it won't fix routes through this reflex.
+8. **TDD-unverifiable → `straitjacket:audit`, not "live-run-guarded" alone.** When TDD is the
+   active method (`tdd` / `triage` fix-mode) and a change genuinely **cannot** be driven RED→GREEN
+   — it lands in non-unit-tested **orchestration** (`workflows/*.js`, `skills/*/SKILL.md`,
+   `agents/*.md`, `hooks.json`) or otherwise has no test seam — do **not** stop at a hand-authored,
+   live-run-guarded fix. Verify it with `straitjacket:audit` scoped to the changed file(s) (the LLM
+   lenses read what no test can cover), then state the verification basis explicitly: *test-backed*
+   vs. *audit-checked + live-run-guarded*. This covers only what the loop truly can't reach —
+   **testable code still goes through the loop** (Cardinal Rule 0 / CLAUDE.md "fix testable bugs via
+   the loop, not hand-patches"); never use this rule to dodge a test you could have written.
 
 ## Severity axes
 

@@ -216,8 +216,18 @@ while (round < maxRounds && units.length) {
   round += 1
 
   phase('Author')
-  await fanout(units, (u) => u.kind === 'unit', authorCap, authorPrompt, 'straitjacket:unit-test-author', 'Author')
-  await fanout(units, (u) => u.kind === 'integration', authorCap, authorPrompt, 'straitjacket:integration-test-author', 'Author')
+  const unitResults = await fanout(units, (u) => u.kind === 'unit', authorCap, authorPrompt, 'straitjacket:unit-test-author', 'Author')
+  const integrationResults = await fanout(units, (u) => u.kind === 'integration', authorCap, authorPrompt, 'straitjacket:integration-test-author', 'Author')
+  // Reconcile the authors' results back into `units` BEFORE RedCheck re-materializes work-units.json:
+  // run-new-tests collects ONLY status=='written' units (run_new_tests.rs:166-169), and coverage-reviewer
+  // hands them in as status:'pending', so without this every red-check would see nothing_to_run on round 1.
+  // Match by work_unit_id and propagate the author-REPORTED status (not a hardcoded 'written') — a unit an
+  // author did not actually write stays uncollected, keeping a total author failure loud rather than masked.
+  const authoredStatusById = new Map()
+  for (const r of [...unitResults, ...integrationResults]) {
+    if (r && r.work_unit_id && r.status) authoredStatusById.set(r.work_unit_id, r.status)
+  }
+  units = units.map((u) => authoredStatusById.has(u.id) ? { ...u, status: authoredStatusById.get(u.id) } : u)
 
   phase('RedCheck')
   await runGate('verify-new-tests-compile', units, { phaseName: 'RedCheck' })
