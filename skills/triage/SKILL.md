@@ -102,6 +102,15 @@ Not a real defect or already tracked → `straitjacket bug-status --repo-root <r
   surface the error verbatim, and ESCALATE in the summary. A bug that can't be fixed honestly stays open.
 - **Surfaced bugs** (a fix-mode run uncovers a *different* defect) → capture via
   `straitjacket:report-bug` as a new record; never fold it into the one you're triaging.
+- **Fix target not TDD-verifiable** (the fix lands in non-unit-tested orchestration —
+  `workflows/*.js`, `skills/*/SKILL.md`, `agents/*.md`, `hooks.json` — or otherwise has no test
+  seam) → the test-gated `fixed` flip (fix-mode seam #2) is **unmeetable by design**. Do **not**
+  fake or weaken a test to clear it. Apply the hand-authored fix, then **verify it via
+  `straitjacket:audit`** scoped to the changed file(s) ([STAGES.md](../../docs/STAGES.md) rule 8) —
+  "live-run-guarded" alone is too weak. Record the basis (*audit-checked + live-run-guarded, not
+  test-backed*) in the record note and summary, and leave the record `open`/`mirrored` (a
+  test-gated `fixed` is not earned) unless the user explicitly directs the disposition. Reserve
+  this for code the loop truly can't reach — **testable code still goes through fix mode.**
 - **You remain the single ledger writer** for the whole run — all status transitions and
   bridge-field writebacks go through this session (`bug-status` / direct edits), never a sub-agent.
 
