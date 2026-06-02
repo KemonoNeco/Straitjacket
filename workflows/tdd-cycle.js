@@ -48,6 +48,10 @@ export const meta = {
 
 const {
   spec,
+  mode = 'spec',          // 'spec' (greenfield) | 'target' (fix mode, seeded from a bug-ledger record)
+  targetFile,             // target/fix mode: suspect_files  -> coverage-reviewer target_file
+  targetSymbol,           // target/fix mode: suspect_symbol -> coverage-reviewer target_symbol
+  intendedBehaviorSeed,   // target/fix mode: AUTHORITATIVE locked contract, passed VERBATIM (never re-inferred)
   stack,
   repoRoot,
   outputDir,
@@ -94,10 +98,74 @@ const GATE_SCHEMA = {
 
 // ---- helpers -------------------------------------------------------------------------
 
+// chunk(arr, size): split into slices of `size`. `size` is clamped to a positive integer so a
+// non-positive / NaN / stringified size can never spin forever (i += 0) or silently yield an
+// empty fan-out (NaN < length === false). See issue #31; callers pass authorCap/implCap here.
 function chunk(arr, size) {
+  const n = Math.max(1, Math.floor(Number(size)) || 1)
   const out = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
   return out
+}
+
+// groupByWriter(units): partition into groups where any two units sharing an output_file_path OR
+// a target_stub_path land in the SAME group (connected components over the files each unit writes).
+// With each group assigned to one agent and never split across a wave, every test file and stub
+// source file has exactly one concurrent writer — the author/impl contract that the old
+// by-array-index chunking silently violated (issue #18). A unit with no file key forms its own group.
+function groupByWriter(units) {
+  const parent = units.map((_u, i) => i)
+  const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i] } return i }
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb }
+  const claimedBy = new Map() // file path -> first unit index that touched it
+  units.forEach((u, i) => {
+    for (const key of [u.output_file_path, u.target_stub_path]) {
+      if (!key) continue
+      if (claimedBy.has(key)) union(i, claimedBy.get(key)); else claimedBy.set(key, i)
+    }
+  })
+  const groups = new Map() // root index -> unit[]
+  units.forEach((u, i) => {
+    const r = find(i)
+    if (!groups.has(r)) groups.set(r, [])
+    groups.get(r).push(u)
+  })
+  return [...groups.values()]
+}
+
+// packGroups(writerGroups, targetSize): greedily pack whole writer-groups into agent-chunks of
+// ~targetSize units WITHOUT ever splitting a writer-group across chunks (so the single-writer
+// guarantee from groupByWriter survives chunking). A group larger than targetSize becomes its own chunk.
+function packGroups(writerGroups, targetSize) {
+  const chunks = []
+  let cur = []
+  for (const g of writerGroups) {
+    if (cur.length && cur.length + g.length > targetSize) { chunks.push(cur); cur = [] }
+    cur = cur.concat(g)
+  }
+  if (cur.length) chunks.push(cur)
+  return chunks
+}
+
+// compileFailure(verdict, label): inspect a verify-new-tests-compile verdict
+// ({all_passed, per_unit_results:[{work_unit_id, output_file_path, passed, diagnostics_excerpt}]}).
+// Returns a loud error string when the new tests/stubs did NOT compile, else null. Binding this is
+// load-bearing (issue #21): a non-compiling tree yields no test ok/FAILED lines, so run-new-tests
+// would classify every unit NeverFound (not RedOk) with nothing_to_run=false and the cycle would
+// proceed on bogus data — this is the workflow path's ONLY compile gate (the PostToolUse hook does
+// not fire for workflow-spawned agents).
+function compileFailure(verdict, label) {
+  // Fail CLOSED (issue #21 + PR review): a null/missing verdict means the gate-runner produced no
+  // result — treat that as a failure to verify the compile, never a silent pass into run-new-tests.
+  if (!verdict) {
+    return `${label}: compile gate produced no verdict (gate-runner returned nothing) — refusing to proceed on an unverified compile`
+  }
+  if (verdict.all_passed === false) {
+    const failed = (verdict.per_unit_results || []).filter((u) => u && u.passed === false)
+    const detail = failed.map((u) => `${u.output_file_path || u.work_unit_id}: ${u.diagnostics_excerpt || 'compile failed'}`).join(' | ')
+    return `${label}: new tests/stubs did not compile — ${detail || 'see compile log'}`
+  }
+  return null
 }
 
 // Run one CLI gate through the gate-runner agent; returns its parsed cli_result (or null).
@@ -180,7 +248,12 @@ async function adversarial(units, mode) {
 async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName) {
   const selected = units.filter(kindPredicate)
   if (!selected.length) return []
-  const groups = chunk(selected, 4)
+  // Single-writer-per-file (issue #18): group units sharing an output_file_path/target_stub_path
+  // BEFORE chunking and never split a writer-group across concurrent agents within a wave. The two
+  // author fanout calls (unit-kind, then integration-kind) are awaited SEQUENTIALLY by the caller,
+  // so a file shared across kinds is never written concurrently; within a call this grouping is the
+  // concurrency guarantee. chunk() (the wave size, `cap`) is itself clamped so cap<=0/NaN can't loop.
+  const groups = packGroups(groupByWriter(selected), 4)
   let results = []
   for (const wave of chunk(groups, cap)) {
     const r = await parallel(wave.map((g) => () =>
@@ -193,13 +266,38 @@ async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName)
 // ---- the cycle -----------------------------------------------------------------------
 
 phase('Coverage')
-const coverage = await agent([
-  `mode: spec; stack: ${stack}`,
-  `Decompose this specification into work units with locked intended_behavior and a target_stub_path`,
-  `per unit (so the test compiles-but-fails against a stub). Enumerate edge cases, not just happy paths.`,
-  `Specification:`, spec,
-  `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
-].join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
+// Coverage runs in one of two modes (issue #14). SPEC mode (default) decomposes a greenfield
+// spec. TARGET/fix mode (triage fix-mode seam #1) decomposes a fix for a KNOWN defect: the
+// intended_behavior_seed is the AUTHORITATIVE contract for the CORRECT behavior — it is passed
+// VERBATIM as each unit's locked intended_behavior and the reviewer must NOT re-infer it or
+// characterize the current (buggy) behavior, or the test would lock the bug instead of the fix.
+// Guard the seam (issue #14): target mode with an empty/degenerate seed would silently hand the
+// reviewer an EMPTY authoritative contract → it would re-infer the buggy behavior (the very thing
+// this seam exists to prevent). Fail loudly instead — mirroring the iterate-materialize guard.
+if (mode === 'target' && (!intendedBehaviorSeed || String(intendedBehaviorSeed).trim().length < 10)) {
+  return { stage: 'tdd-cycle', error: 'target/fix mode requires a non-empty intendedBehaviorSeed (the authoritative locked contract); refusing to run coverage-reviewer without one — an empty seed would force it to re-infer the buggy behavior', locked_contracts: [], ready_to_commit: false }
+}
+const coveragePromptLines = (mode === 'target')
+  ? [
+      `mode: target; stack: ${stack}`,
+      `Fix mode. Decompose a fix for a KNOWN defect into work units that pin the CORRECT behavior,`,
+      `each with a target_stub_path so the test compiles-but-fails. Enumerate edge cases.`,
+      `target_file: ${targetFile || ''}`,
+      `target_symbol: ${targetSymbol || ''}`,
+      `intended_behavior (AUTHORITATIVE — use VERBATIM as each unit's locked intended_behavior; do`,
+      ` NOT re-infer it and do NOT characterize the current buggy behavior):`,
+      intendedBehaviorSeed || '',
+      `Context (NOT the contract — the seed above is the contract):`, spec || '(none)',
+      `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
+    ]
+  : [
+      `mode: spec; stack: ${stack}`,
+      `Decompose this specification into work units with locked intended_behavior and a target_stub_path`,
+      `per unit (so the test compiles-but-fails against a stub). Enumerate edge cases, not just happy paths.`,
+      `Specification:`, spec,
+      `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
+    ]
+const coverage = await agent(coveragePromptLines.join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
 
 let units = (coverage && coverage.work_units) || []
 const lockedContracts = units.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
@@ -230,16 +328,33 @@ while (round < maxRounds && units.length) {
   units = units.map((u) => authoredStatusById.has(u.id) ? { ...u, status: authoredStatusById.get(u.id) } : u)
 
   phase('RedCheck')
-  await runGate('verify-new-tests-compile', units, { phaseName: 'RedCheck' })
+  // Bind + branch on the compile verdict BEFORE run-new-tests (issue #21): a non-compiling tree
+  // would otherwise be misread as NeverFound/regression downstream and the cycle would proceed.
+  const redCompileErr = compileFailure(await runGate('verify-new-tests-compile', units, { phaseName: 'RedCheck' }), 'RedCheck compile')
+  if (redCompileErr) { lastError = redCompileErr; break }
   const red = await runGate('run-new-tests', units, { expect: 'fail', phaseName: 'RedCheck' })
   if (!red || red.nothing_to_run) {
     lastError = 'red-check checked nothing (nothing_to_run) — authoring produced no runnable tests'
     break
   }
-  const redNames = (red.per_unit_results || []).map((u) => u.output_test_name)
-  const vacuous = (red.per_unit_results || []).filter((u) => u.classification === 'vacuous_pre_impl')
-  // (A vacuous pre-impl test would be re-authored here with a sharper prompt in a full run;
-  //  recorded for the summary so it is never silently accepted.)
+  // A vacuous pre-impl test PASSED against the unimplemented stub — it asserts nothing real and
+  // must never be silently accepted (issue #20): surface each and fail this round loudly. (The
+  // engine already classifies these 'rejected_lint'; only the JS used to compute-then-drop them.)
+  const vacuous = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'vacuous_pre_impl')
+  if (vacuous.length) {
+    for (const vu of vacuous) {
+      const wu = units.find((u) => u.id === vu.work_unit_id)
+      surfacedBugs.push({
+        work_unit_id: vu.work_unit_id,
+        target_file: wu && wu.target_file,
+        target_symbol: wu && wu.target_symbol,
+        intended_behavior_seed: wu && wu.intended_behavior,
+        note: 'vacuous pre-impl: test passed against the stub (asserts nothing) — re-author with a sharper assertion',
+      })
+    }
+    lastError = `vacuous pre-impl test(s) asserted nothing (passed against the stub): ${vacuous.map((u) => u.work_unit_id).join(', ')}`
+    break
+  }
 
   phase('PreAdversarial')
   const pre = await adversarial(units, 'pre_impl')
@@ -250,30 +365,38 @@ while (round < maxRounds && units.length) {
   await fanout(units, () => true, implCap, implPrompt, 'straitjacket:implementation-author', 'Implement')
 
   phase('GreenCheck')
-  await runGate('verify-new-tests-compile', units, { phaseName: 'GreenCheck' })
+  const greenCompileErr = compileFailure(await runGate('verify-new-tests-compile', units, { phaseName: 'GreenCheck' }), 'GreenCheck compile')
+  if (greenCompileErr) { lastError = greenCompileErr; break }
   const green = await runGate('run-new-tests', units, { expect: 'pass', phaseName: 'GreenCheck' })
   if (!green || green.nothing_to_run) {
     lastError = 'green-check checked nothing (nothing_to_run)'
     break
   }
-  const greenNames = (green.per_unit_results || []).map((u) => u.output_test_name)
-  // name-survival: every RED test name must still exist at green.
-  const missing = redNames.filter((n) => !greenNames.includes(n))
-  if (missing.length) {
-    // Name-survival violation: a RED test went missing/deleted/renamed/#[ignore]-d at green.
-    // This is a test-mutation cheat — fail loudly, never silently accept.
-    lastError = `name-survival violation: RED tests missing at green: ${missing.join(', ')}`
+  // Name-survival (issue #28): join red and green per_unit_results on the STABLE work_unit_id —
+  // NOT the declared output_test_name, which is echoed from input and identical at both gates (so
+  // the old name compare was vacuous, `missing` always []). Every test that RAN at red must still
+  // exist at green; one that is gone/non-executing (never_found) is a test-mutation cheat
+  // (deleted/renamed/#[ignore]-d) and fails loudly.
+  const greenByUnit = new Map((green.per_unit_results || []).filter(Boolean).map((u) => [u.work_unit_id, u]))
+  const redRan = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification && u.classification !== 'never_found')
+  const survivalViolations = redRan
+    .filter((ru) => { const gu = greenByUnit.get(ru.work_unit_id); return !gu || gu.classification === 'never_found' })
+    .map((ru) => ru.work_unit_id)
+  if (survivalViolations.length) {
+    lastError = `name-survival violation: RED tests missing/non-executing at green (by work_unit_id): ${survivalViolations.join(', ')}`
     break
   }
-  const failedUnits = (green.per_unit_results || []).filter((u) => u.classification === 'all_fail')
-  for (const fu of failedUnits) {
+  // ready_to_commit must never be true with a green unit that did not CLEANLY pass (issue #29):
+  // surface EVERY non-all_pass classification (all_fail / flaky / never_found), not just all_fail.
+  const notPassing = (green.per_unit_results || []).filter(Boolean).filter((u) => u.classification !== 'all_pass')
+  for (const fu of notPassing) {
     const wu = units.find((u) => u.id === fu.work_unit_id)
     surfacedBugs.push({
       work_unit_id: fu.work_unit_id,
       target_file: wu && wu.target_file,
       target_symbol: wu && wu.target_symbol,
       intended_behavior_seed: wu && wu.intended_behavior,
-      note: 'green-check could not make this test pass without weakening it — surfaced, not weakened',
+      note: `green-check classified this unit '${fu.classification}', not all_pass — surfaced, not weakened`,
     })
   }
 
@@ -298,17 +421,57 @@ while (round < maxRounds && units.length) {
   const unresolved = ((post.synthesis && post.synthesis.static_findings) || []).filter((f) => f && (f.severity === 'high' || f.severity === 'medium'))
   const proposals = (post.synthesis && post.synthesis.new_work_unit_proposals) || []
   if ((roundMutants.length || unresolved.length) && proposals.length) {
+    // Materialize each synthesis proposal into a SCHEMA-COMPLETE WorkUnit before the next round
+    // (issue #19): a proposal carries only target_file/target_symbol/kind/intended_behavior, but the
+    // gates collect ONLY status=='written' units and reconcile by id — so feeding raw proposals
+    // (no id, no output_file_path, no status) made round 2+ collect nothing and break. This mirrors
+    // the round-1 materialization coverage-reviewer output receives; FAIL LOUDLY rather than feed a
+    // partial proposal forward (the fix-mode seed permits a loud fail over a silent mis-run).
+    const materialized = []
+    for (let i = 0; i < proposals.length; i += 1) {
+      const p = proposals[i] || {}
+      if (!p.target_file || !p.intended_behavior || String(p.intended_behavior).length < 10) {
+        lastError = `iterate: synthesis proposal #${i} lacks a usable target_file/intended_behavior — refusing to feed a partial proposal into round ${round + 1}`
+        break
+      }
+      materialized.push({
+        id: `r${round + 1}-p${i}`,
+        target_file: p.target_file,
+        target_symbol: p.target_symbol || p.target_file,
+        kind: p.kind === 'integration' ? 'integration' : 'unit',
+        intended_behavior: p.intended_behavior,
+        preconditions: p.preconditions || '',
+        inputs: p.inputs || '',
+        expected: p.expected || '',
+        fuzzable: !!p.fuzzable,
+        output_file_path: p.output_file_path || p.target_stub_path || p.target_file,
+        output_test_name: p.output_test_name || `test_r${round + 1}_p${i}`,
+        target_stub_path: p.target_stub_path || p.target_file,
+        status: 'pending',
+        round: round + 1,
+        source_of_unit: 'adversarial_reviewer',
+      })
+    }
+    if (lastError) break
     // Next round covers the under-tested behavior class the synthesis proposed (never the mutant itself).
-    units = proposals
+    units = materialized
     continue
   }
   break
 }
 
 phase('Finalize')
-const audit = await runGate('verify-no-test-mutation', units, { phaseName: 'Finalize' })
+// The no-test-mutation gate diffs against a snapshot. When testSnapshotPath is unset (e.g. the
+// triage fix-mode caller), the CLI's required --snapshot-file is absent and the gate would
+// clap-exit-2; skip it and mark it not-run rather than invoke a degenerate audit (issue #22).
+const audit = testSnapshotPath
+  ? await runGate('verify-no-test-mutation', units, { phaseName: 'Finalize' })
+  : { skipped: true }
 
-const readyToCommit = !lastError && surfacedBugs.length === 0
+// ready_to_commit incorporates the no-mutation audit verdict (issue #30): a flagged mutation
+// (audit.clean === false) blocks the commit; a skipped/absent/null audit must NOT false-block.
+const auditClean = !audit || audit.clean !== false
+const readyToCommit = !lastError && surfacedBugs.length === 0 && auditClean
 
 return {
   stage: 'tdd-cycle',
