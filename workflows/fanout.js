@@ -22,6 +22,10 @@ export const meta = {
 }
 
 const { tasks = [], cap = 6 } = args
+// cap is clamped to a positive integer so a 0 / negative / NaN / stringified cap can't spin
+// forever (i += 0) or silently process nothing (NaN < length === false) — same class of hazard
+// as tdd-cycle.js's chunk() size (issue #31).
+const step = Math.max(1, Math.floor(Number(cap)) || 1)
 
 // Two agent shapes ride this stage. Authoring/impl agents return a wrapper of per-unit
 // results ({results:[{work_unit_id,status,file_written,...}]}); the mechanical runners this
@@ -40,8 +44,8 @@ const CHUNK_RESULT_SCHEMA = {
 
 phase('Fanout')
 let chunkResults = []
-for (let i = 0; i < tasks.length; i += cap) {
-  const batch = tasks.slice(i, i + cap).map((t) => () =>
+for (let i = 0; i < tasks.length; i += step) {
+  const batch = tasks.slice(i, i + step).map((t) => () =>
     agent(t.prompt, { agentType: t.agentType, schema: CHUNK_RESULT_SCHEMA, phase: 'Fanout', label: t.label || t.agentType }))
   chunkResults = chunkResults.concat((await parallel(batch)).filter(Boolean))
 }
