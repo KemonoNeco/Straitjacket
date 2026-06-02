@@ -76,6 +76,7 @@ if (!Array.isArray(lenses) || !lenses.length) throw new Error('straitjacket:audi
 // ---- Mechanical: one audit-runner per tool, cap 3 (the plugin's mechanical-team cap) ----
 phase('Mechanical')
 let mechanicalFindings = []
+const mechanicalCoverage = []
 for (const wave of chunk(mechanicalTools, 3)) {
   const r = await parallel(wave.map((tool) => () =>
     agent([
@@ -84,8 +85,21 @@ for (const wave of chunk(mechanicalTools, 3)) {
       `Run: straitjacket audit-run --tool ${tool} --stack ${stack} --repo-root ${repoRoot}`,
       `Return the audit-run JSON ({tool, available, nothing_scanned, findings}).`,
     ].join('\n'), { agentType: 'straitjacket:audit-runner', schema: RUNNER_SCHEMA, phase: 'Mechanical', label: `tool:${tool}` })))
-  mechanicalFindings = mechanicalFindings.concat(
-    r.filter(Boolean).flatMap((res) => (res.findings || []).map((f) => ({ ...f, source: 'mechanical' }))))
+  // Account for EVERY dispatched runner, including a null return (issue #40): a runner agent that died
+  // returns falsy and would otherwise vanish entirely (the Mechanical phase had NO coverage ledger), so
+  // a tool that never ran was indistinguishable from one that scanned and found nothing. Zip the wave's
+  // dispatched tool NAMES with the returns (parallel preserves order; a failed thunk resolves to null)
+  // so a drop is recorded as failed coverage keyed by the dispatched name, not by res.tool (absent on a
+  // dead agent). The findings concat still skips falsy returns — a dropped runner contributes none.
+  wave.forEach((tool, j) => {
+    const res = r[j]
+    if (res) {
+      mechanicalCoverage.push({ tool: res.tool || tool, count: (res.findings || []).length, available: res.available !== false, nothing_scanned: !!res.nothing_scanned, failed: false })
+      mechanicalFindings = mechanicalFindings.concat((res.findings || []).map((f) => ({ ...f, source: 'mechanical' })))
+    } else {
+      mechanicalCoverage.push({ tool, count: 0, available: false, nothing_scanned: true, failed: true })
+    }
+  })
 }
 
 // ---- Lenses: one isolated finder per selected lens, cap 6 ----
@@ -103,10 +117,21 @@ for (const wave of chunk(lenses, 6)) {
       `Fill the bridge fields (suspect_files/suspect_symbol/intended_behavior_seed) for any bug_record/work_unit_proposal.`,
       `Return ONLY JSON per your output contract, incl. isolation_check.`,
     ].join('\n'), { agentType: `straitjacket:audit-${lens}`, schema: LENS_SCHEMA, phase: 'Lenses', label: `lens:${lens}` })))
-  for (const res of r.filter(Boolean)) {
-    lensCoverage.push({ lens: res.lens, count: (res.findings || []).length, nothing_scanned: !!res.nothing_scanned })
-    llmFindings = llmFindings.concat((res.findings || []).map((f) => ({ ...f, source: f.source || 'llm' })))
-  }
+  // Account for EVERY dispatched lens, including a null return (issue #40): a lens agent that died
+  // returns falsy and the old `for (const res of r.filter(Boolean))` dropped it BEFORE the coverage
+  // push, so a lens that silently failed to run was indistinguishable from one that scanned clean.
+  // Zip the wave's dispatched lens NAMES with the returns (parallel preserves order; a failed thunk
+  // resolves to null) and record a drop as failed/nothing_scanned coverage keyed by the dispatched
+  // name — `res.lens` is unavailable on a dead agent, so the in-scope `lens` is the only stable key.
+  wave.forEach((lens, j) => {
+    const res = r[j]
+    if (res) {
+      lensCoverage.push({ lens: res.lens || lens, count: (res.findings || []).length, nothing_scanned: !!res.nothing_scanned, failed: false })
+      llmFindings = llmFindings.concat((res.findings || []).map((f) => ({ ...f, source: f.source || 'llm' })))
+    } else {
+      lensCoverage.push({ lens, count: 0, nothing_scanned: true, failed: true })
+    }
+  })
 }
 
 // ---- Refute: skeptics vote over the FULL llm-finding set; mechanical findings bypass ----
@@ -114,7 +139,11 @@ phase('Refute')
 let refuterVotes = []
 if (llmFindings.length) {
   // Each refuter sees claim + evidence + source only (no finder reasoning), and the source itself.
-  const claimsOnly = llmFindings.map((f, i) => ({ ref: i, lens: f.lens, severity: f.severity, title: f.title, summary: f.summary, suspect_files: f.suspect_files, file: f.file, line: f.line, evidence: f.evidence }))
+  // Carry every finding field the audit-refuter contract (agents/audit-refuter.md "Inputs") enumerates
+  // as provided — notably suspect_symbol, the drift-resistant language-qualified locator, plus the
+  // when-present expected/actual (issue #43). Omit the array index `ref`: the refuter is told below to
+  // key votes by title (NOT the index) and synthesis joins by title, so `ref` was dead payload.
+  const claimsOnly = llmFindings.map((f) => ({ lens: f.lens, severity: f.severity, title: f.title, summary: f.summary, expected: f.expected, actual: f.actual, suspect_files: f.suspect_files, suspect_symbol: f.suspect_symbol, file: f.file, line: f.line, evidence: f.evidence }))
   const votes = await parallel(Array.from({ length: Math.min(skeptics, 3) }, (_unused, k) => () =>
     agent([
       `You are an audit-refuter (skeptic #${k + 1}). For EACH finding below, vote refute / survive / uncertain.`,
@@ -132,15 +161,37 @@ phase('Synthesis')
 const synthesis = await agent([
   `mode: audit; stack: ${stack}`,
   `Synthesize this audit. Inputs: the LLM findings, the refuter votes over them, and the mechanical findings.`,
-  `Keep an LLM finding only if it SURVIVED the refute quorum (>= half of ${Math.min(skeptics, 3)} skeptics voted survive).`,
+  // Quorum (issue #42): keep an LLM finding only on a STRICT MAJORITY of the DISPATCHED skeptic pool —
+  // never the number of vote sets that happened to return. A refuter that died is a NON-confirmation,
+  // not an abstention that shrinks the bar; counting only returned votes is the lenient direction and
+  // would violate this audit's "default refute when unconfirmable" spine (a lone survivor among two
+  // dead refuters must NOT carry a finding). A refute, an uncertain, AND a missing/null vote each count
+  // as NOT survive, so a tie at an even skeptic count REFUTES.
+  `Keep an LLM finding only if it SURVIVED the refute quorum: a STRICT MAJORITY of the ${Math.min(skeptics, 3)} DISPATCHED skeptics voted survive — i.e. survive_votes * 2 > ${Math.min(skeptics, 3)}. The denominator is the DISPATCHED skeptic count (${Math.min(skeptics, 3)}), NOT the number of vote sets returned; a refute, an uncertain, or a missing/null vote each counts as NOT survive, so a tie refutes (default-refute when unconfirmable).`,
   `An LLM lens + a mechanical tool flagging the same issue => mark source:"corroborated" (pre-trusted, keep without refutation).`,
   `Drop refuted findings (list them in refuted_findings); surface uncertain ones (uncertain_findings) but never auto-file them.`,
   `Rank survivors by severity; assign each a disposition (report | bug_record | work_unit_proposal) and ensure bridge fields are filled.`,
+  // Coverage (issue #40): a lens/runner that returned null scanned NOTHING. If any coverage entry has
+  // failed:true the scan is PARTIAL — set synthesis_status:"degraded" and note it; never report "ok"
+  // over a silently-incomplete scan. (The orchestrator also enforces this deterministically below.)
+  `lens_coverage: ${JSON.stringify(lensCoverage)}`,
+  `mechanical_coverage: ${JSON.stringify(mechanicalCoverage)}`,
+  `If any lens_coverage / mechanical_coverage entry has failed:true, set synthesis_status:"degraded" (a lens or tool failed to run — the scan is partial).`,
   `llm_findings: ${JSON.stringify(llmFindings)}`,
   `refuter_votes: ${JSON.stringify(refuterVotes)}`,
   `mechanical_findings: ${JSON.stringify(mechanicalFindings)}`,
   `Return ONLY JSON: {confirmed_findings, refuted_findings, uncertain_findings, synthesis_status}.`,
 ].join('\n'), { agentType: 'straitjacket:audit-synthesis', schema: SYNTH_SCHEMA, phase: 'Synthesis', label: 'audit-synthesis' })
+
+// Deterministically reflect partial coverage (issue #40). synthesis_status is a FREE LLM string and the
+// synthesis agent's downgrade-on-partial is best-effort, so the orchestrator enforces the floor itself:
+// a lens or mechanical runner that returned null scanned NOTHING, so the audit is partial regardless of
+// what synthesis reported. Force the status down to "degraded" so a false-clean ("ok") result can never
+// ride out over a silently-incomplete scan — and surface exactly which lenses/tools failed.
+const failedLenses = lensCoverage.filter((c) => c.failed).map((c) => c.lens)
+const failedMechanicalTools = mechanicalCoverage.filter((c) => c.failed).map((c) => c.tool)
+const coverageComplete = !failedLenses.length && !failedMechanicalTools.length
+const rawSynthesisStatus = (synthesis && synthesis.synthesis_status) || 'degraded'
 
 return {
   stage: 'audit',
@@ -149,6 +200,10 @@ return {
   uncertain_findings: (synthesis && synthesis.uncertain_findings) || [],
   mechanical_findings: mechanicalFindings,
   lens_coverage: lensCoverage,
+  mechanical_coverage: mechanicalCoverage,
+  coverage_complete: coverageComplete,
+  failed_lenses: failedLenses,
+  failed_mechanical_tools: failedMechanicalTools,
   refutation_summary: { skeptics: Math.min(skeptics, 3), llm_finding_count: llmFindings.length },
-  synthesis_status: (synthesis && synthesis.synthesis_status) || 'degraded',
+  synthesis_status: coverageComplete ? rawSynthesisStatus : 'degraded',
 }

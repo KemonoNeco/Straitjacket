@@ -155,8 +155,16 @@ function packGroups(writerGroups, targetSize) {
 // proceed on bogus data — this is the workflow path's ONLY compile gate (the PostToolUse hook does
 // not fire for workflow-spawned agents).
 function compileFailure(verdict, label) {
-  // Fail CLOSED (issue #21 + PR review): a null/missing verdict means the gate-runner produced no
-  // result — treat that as a failure to verify the compile, never a silent pass into run-new-tests.
+  // Fail CLOSED (issue #21 + #46): ONLY an affirmative all_passed === true clears this gate. There are
+  // two distinct un-verified shapes and both must fail closed:
+  //   (1) a null/missing verdict — the gate-runner produced no result at all;
+  //   (2) a TRUTHY-but-shapeless verdict that omits the all_passed boolean (e.g. an LLM gate-runner
+  //       returns {per_unit_results:[...]} but no all_passed). GATE_SCHEMA leaves cli_result entirely
+  //       unconstrained, so such a verdict passes schema validation and reaches here verbatim.
+  // The earlier guard reasoned only about case (1); a present-but-shapeless verdict (case 2) used to
+  // fall through to `return null` and be misread as "compile passed". This is the workflow path's ONLY
+  // compile gate (the PostToolUse hook does not fire for workflow-spawned agents), so a missing flag
+  // must never be read as a pass into run-new-tests.
   if (!verdict) {
     return `${label}: compile gate produced no verdict (gate-runner returned nothing) — refusing to proceed on an unverified compile`
   }
@@ -164,6 +172,10 @@ function compileFailure(verdict, label) {
     const failed = (verdict.per_unit_results || []).filter((u) => u && u.passed === false)
     const detail = failed.map((u) => `${u.output_file_path || u.work_unit_id}: ${u.diagnostics_excerpt || 'compile failed'}`).join(' | ')
     return `${label}: new tests/stubs did not compile — ${detail || 'see compile log'}`
+  }
+  if (verdict.all_passed !== true) {
+    const got = verdict.all_passed === undefined ? 'a verdict missing the all_passed flag' : `all_passed=${JSON.stringify(verdict.all_passed)}`
+    return `${label}: compile gate verdict did not affirm all_passed === true (${got}) — refusing to proceed on an unverified compile`
   }
   return null
 }
@@ -277,7 +289,7 @@ async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName)
 function bail(error) {
   return {
     stage: 'tdd-cycle', rounds_run: 0, error,
-    degraded: [], locked_contracts: [], surfaced_bugs: [], pre_impl_strengthenings: [],
+    degraded: [], locked_contracts: [], surfaced_bugs: [], pre_impl_strengthenings: [], dropped_impl: [],
     surviving_mutants: [], mutation_runners_failed: 0, no_mutation_audit: null, ready_to_commit: false,
   }
 }
@@ -351,6 +363,11 @@ const degraded = []                  // issue #37: non-fatal agent-phase failure
                                      // human in the loop). Distinct from lastError, which is for false-green-capable
                                      // (untested-behavior-reaching-commit) failures that break the loop.
 const preImplStrengthenings = []     // issue #38: pre-impl adversarial proposals, SURFACED (not authored).
+const droppedImpl = []               // issue #47: units an implementation-author chunk produced NO result for
+                                     // (null after its retry budget). DIAGNOSTIC-ONLY + NON-gating: GreenCheck
+                                     // already fails closed on an unimplemented stub (its test runs and fails),
+                                     // so this only attributes WHICH unit/stub dropped — it never writes status
+                                     // (load-bearing for gate collection) nor blocks ready_to_commit.
 let mutationRunnersFailed = 0        // issue #37: dropped mutation-runner agents — NON-gating (mutation is advisory
                                      // + --quick-skippable); counted/surfaced but never blocks ready_to_commit.
 let round = 0
@@ -445,7 +462,19 @@ while (round < maxRounds && units.length) {
   preImplStrengthenings.push(...((pre.synthesis && pre.synthesis.new_work_unit_proposals) || []).map((p) => ({ ...p, round })))
 
   phase('Implement')
-  await fanout(units, () => true, implCap, implPrompt, 'straitjacket:implementation-author', 'Implement')
+  // Capture the impl fanout result and attribute any DROPPED implementation-author (issue #47): a chunk
+  // that returned null after its retry budget contributes no per-unit result, so a unit left
+  // unimplemented was invisible here and surfaced only as a generic GreenCheck classification with no
+  // link back to which work_unit / target_stub_path dropped. This is DIAGNOSTIC-ONLY and mirrors the
+  // adversarial()->degraded attribution pattern, NOT the author-phase reconcile (whose status-write is
+  // load-bearing for gate collection): we do NOT write status (the unimplemented stub must stay
+  // status:'written' so its test still runs and fails CLOSED at green) and we add NO commit gate — the
+  // dropped units are recorded for attribution only, never folded into readyToCommit.
+  const implResults = await fanout(units, () => true, implCap, implPrompt, 'straitjacket:implementation-author', 'Implement')
+  const implementedIds = new Set(implResults.map((r) => r && r.work_unit_id).filter(Boolean))
+  for (const u of units.filter((u) => !implementedIds.has(u.id))) {
+    droppedImpl.push({ work_unit_id: u.id, target_stub_path: u.target_stub_path, target_file: u.target_file, round })
+  }
 
   phase('GreenCheck')
   const greenCompileErr = compileFailure(await runGate('verify-new-tests-compile', units, { phaseName: 'GreenCheck' }), 'GreenCheck compile')
@@ -514,7 +543,15 @@ while (round < maxRounds && units.length) {
   // ---- iterate decision (in-script) ----
   const unresolved = ((post.synthesis && post.synthesis.static_findings) || []).filter((f) => f && (f.severity === 'high' || f.severity === 'medium'))
   const proposals = (post.synthesis && post.synthesis.new_work_unit_proposals) || []
-  if ((roundMutants.length || unresolved.length) && proposals.length) {
+  // Another GATED round runs ONLY if one is wanted AND a round remains in the cap (issue #45). On the
+  // final allowed round (round === maxRounds) the old code still hit `units = materialized; continue`,
+  // but the loop guard `round < maxRounds` was then false, so it EXITED without ever authoring/gating
+  // the materialized units — and the unresolved findings that wanted the round lived only in the
+  // loop-local `unresolved` (recorded in no gating variable), so readyToCommit could read true over open
+  // findings. Gate the iterate on a remaining round; the cap-exhausted AND the no-proposals cases fall
+  // through to the unresolved-findings guard below so neither silently drops open findings.
+  const wantsAnotherRound = !!((roundMutants.length || unresolved.length) && proposals.length)
+  if (wantsAnotherRound && round < maxRounds) {
     // Materialize each synthesis proposal into a SCHEMA-COMPLETE WorkUnit before the next round
     // (issue #19): a proposal carries only target_file/target_symbol/kind/intended_behavior, but the
     // gates collect ONLY status=='written' units and reconcile by id — so feeding raw proposals
@@ -551,6 +588,20 @@ while (round < maxRounds && units.length) {
     units = materialized
     continue
   }
+  // Not iterating further this run (issue #45): either the maxRounds cap is exhausted, or there are no
+  // materializable proposals to carry findings forward. If unresolved high/medium findings remain they
+  // were the reason another round was wanted and will now NEVER be re-authored/re-gated — record them as
+  // a blocking degraded reason so ready_to_commit fails closed instead of reporting commit-ready over
+  // open findings. (degraded, not lastError: the green that ran IS real; this is the "a quality concern
+  // is unresolved at the cap" tier. Surviving mutants alone do NOT block — mutation is advisory/non-gating
+  // per #37 and is already surfaced in the return — so this gates only on unresolved static findings.)
+  if (unresolved.length) {
+    const why = !proposals.length
+      ? 'no materializable proposals to carry them forward'
+      : `the maxRounds cap (${maxRounds}) is exhausted`
+    const titles = unresolved.map((f) => f.title || f.summary || '(untitled finding)').slice(0, 8).join('; ')
+    degraded.push(`post-green left ${unresolved.length} unresolved high/medium finding(s) that will not be re-authored/re-gated — ${why}: ${titles}${unresolved.length > 8 ? ' …' : ''}`)
+  }
   break
 }
 
@@ -580,6 +631,7 @@ return {
   locked_contracts: lockedContracts,         // surfaced NON-BLOCKING in the summary (contract-review removed)
   surfaced_bugs: surfacedBugs,               // main session: park-vs-fix + report-bug
   pre_impl_strengthenings: preImplStrengthenings,  // issue #38: proposed test strengthenings, SURFACED (not authored)
+  dropped_impl: droppedImpl,                 // issue #47: units a dropped implementation-author left unimplemented (diagnostic, NON-gating)
   surviving_mutants: survivingMutants,
   mutation_runners_failed: mutationRunnersFailed,  // issue #37: dropped mutation-runner agents (NON-gating, advisory)
   no_mutation_audit: audit,
