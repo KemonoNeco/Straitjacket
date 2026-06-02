@@ -80,6 +80,12 @@ function specialistPrompt(dim) {
   ].join('\n')
 }
 
+if (!args || typeof args !== 'object' || Array.isArray(args)) {
+  throw new Error(`straitjacket:adversarial — args must be a plain object, got ${Array.isArray(args) ? 'Array' : typeof args}; pass { workUnits, stack, mode, ... } not a CLI string`)
+}
+if (!workUnits || !workUnits.length) throw new Error('straitjacket:adversarial — required arg `workUnits` must be a non-empty array')
+if (!mode) throw new Error('straitjacket:adversarial — required arg `mode` is missing (must be "pre_impl" | "post_green" | "lock")')
+
 phase('Specialists')
 const reports = (await parallel([
   () => agent(specialistPrompt('vacuousness'), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'vacuousness' }),
