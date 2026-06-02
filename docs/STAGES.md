@@ -35,21 +35,21 @@ pass `model:` - each agent's frontmatter locks its tier and tool list. Tool rest
 | `subagent_type` | Model | Effort | Tools | Role |
 |---|---|---|---|---|
 | `coverage-reviewer` | opus | xhigh | Read, Grep, Glob | Enumerates behaviors and **locks** immutable `intended_behavior` work units. Modes: diff / target / spec. Single agent. |
-| `unit-test-author` | sonnet | high | Read, Grep, Glob, Write, Edit | Writes unit tests for assigned work units. Parallel team (chunk ~3-5 units/agent). |
+| `unit-test-author` | opus | low | Read, Grep, Glob, Write, Edit | Writes unit tests for assigned work units. Parallel team (chunk ~3-5 units/agent). Opus ceiling (weak tests cascade) at minimal effort — heavily scaffolded by the xhigh coverage-reviewer contract + downstream gates. **Watch `rounds_run`/adversarial strengthening churn on live runs; bump to `medium` if re-loops climb.** |
 | `integration-test-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Writes integration tests (setup/teardown, doubles, determinism). Parallel team. |
-| `adversarial-vacuousness` | opus | high | Read, Grep, Glob | Vacuous-assertion + test-mutation-pattern lens. **No Bash** (diff-blind). |
-| `adversarial-happy-path` | opus | high | Read, Grep, Glob | Happy-path-bias + edge-case-enumeration lens. **No Bash.** |
-| `adversarial-misalignment` | opus | high | Read, Grep, Glob | Test ↔ contract alignment lens. **No Bash.** |
-| `adversarial-synthesis` | opus | xhigh | Read, Grep, Glob | Dedupes/ranks the three reports; emits `new_work_unit_proposals` + `mutation_runner_tasks`. |
+| `adversarial-vacuousness` | opus | medium | Read, Grep, Glob | Vacuous-assertion + test-mutation-pattern lens. Critical detection role → Opus ceiling, trimmed effort. **No Bash** (diff-blind). |
+| `adversarial-happy-path` | opus | medium | Read, Grep, Glob | Happy-path-bias + edge-case-enumeration lens. **No Bash.** |
+| `adversarial-misalignment` | opus | medium | Read, Grep, Glob | Test ↔ contract alignment lens. **No Bash.** |
+| `adversarial-synthesis` | opus | high | Read, Grep, Glob | Dedupes/ranks the three reports; emits `new_work_unit_proposals` + `mutation_runner_tasks`. Judgment-aggregation — trimmed from xhigh. |
 | `mutation-runner` | haiku | - | Read, Bash, PowerShell | Mechanical: runs cargo-mutants / dotnet-stryker on a target → surviving mutants. |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Writes libFuzzer / SharpFuzz harnesses → runner tasks. Single. |
 | `fuzz-runner` | haiku | - | Read, Glob, Bash, PowerShell | Mechanical: runs one harness for a time budget → crash artifacts. |
 | `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Replaces `unimplemented!()` / `NotImplementedException` stubs (tdd green) **or** fixes buggy source (fix mode). **Never modifies tests.** |
 | `gate-runner` | haiku | - | Read, Glob, Bash, PowerShell, Write | Mechanical: materializes work-units.json and runs one straitjacket CLI gate (run-new-tests / verify-*); the in-workflow sequential single-writer for `tdd-cycle`. |
-| `audit-<lens>` (×7) | opus | high | Read, Grep, Glob | Isolated source-audit finders, one per lens (latent-bug, security, performance, dead-code, doc-drift, concurrency, error-handling). **No Bash.** Emit findings per `schemas/audit-finding.schema.json` (`lens` field is un-prefixed). |
+| `audit-<lens>` (×7) | opus (critical) / sonnet (cosmetic) | high | Read, Grep, Glob | Isolated source-audit finders, one per lens. **Opus**: latent-bug, security, concurrency, error-handling (correctness/safety). **Sonnet**: dead-code, doc-drift, performance (non-critical — cost-optimized). **No Bash.** Emit findings per `schemas/audit-finding.schema.json` (`lens` field is un-prefixed). |
 | `audit-runner` | haiku | - | Read, Bash, PowerShell, Glob | Mechanical: runs one `straitjacket audit-run --tool …` and returns its normalized findings. |
-| `audit-refuter` | opus | high | Read, Grep, Glob | Skeptic: votes refute/survive/uncertain over the full LLM-finding set; defaults to refute when unconfirmable. **No Bash.** |
-| `audit-synthesis` | opus | xhigh | Read, Grep, Glob | Dedupes/ranks audit survivors + mechanical findings; corroborates LLM+tool agreement; assigns disposition. Distinct from `adversarial-synthesis` (which works on test reports). |
+| `audit-refuter` | opus | medium | Read, Grep, Glob | Skeptic: votes refute/survive/uncertain over the full LLM-finding set; defaults to refute when unconfirmable. Audit correctness spine → Opus ceiling; verification doesn't need `high`. **No Bash.** |
+| `audit-synthesis` | opus | high | Read, Grep, Glob | Dedupes/ranks audit survivors + mechanical findings; corroborates LLM+tool agreement; assigns disposition. Judgment-aggregation — trimmed from xhigh. Distinct from `adversarial-synthesis` (which works on test reports). |
 | `root-cause-analyst` | opus | xhigh | Read, Grep, Glob, Bash, PowerShell | The debugger (debug/triage skills). Reproduces + root-causes one bug from green (**NO Edit**; leaves the tree green); returns the 3 bridge fields + root_cause + reproduction. Single intra-turn agent, not a stage. |
 
 ## Dispatch convention - workflow-first, with Agent fallback
@@ -187,7 +187,7 @@ exists yet, so the reviewer also pre-assigns `target_stub_path` (where the `unim
 Two deliberate severity scales coexist - this is **by design, not drift**:
 
 - **Adversarial *test-validity* findings** use a 3-level scale: `low | medium | high`. A test is never "critical" - the axis measures *how badly a test fails to constrain behavior*.
-- **Audit *defect-impact* + bug-record findings** use a 4-level scale: `critical | high | medium | low`. The axis is *real-world impact*; it maps 1:1 onto `BugRecord.severity` and drives the audit refuter count (higher severity → more skeptics).
+- **Audit *defect-impact* + bug-record findings** use a 4-level scale: `critical | high | medium | low`. The axis is *real-world impact*; it maps 1:1 onto `BugRecord.severity` and ranks confirmed survivors (audit.js synthesis). The refuter count is a flat per-run `--skeptics` (default 3, cap 3) voting over the whole finding set — it is **not** severity-scaled.
 
 ## Run-state layout
 

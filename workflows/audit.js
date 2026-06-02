@@ -20,7 +20,7 @@
 //   lenses            string[] of lens names (e.g. ["latent-bug","security","dead-code"])
 //   mechanicalTools   string[] of tool names for audit-runner (e.g. ["clippy-dead-code","cargo-audit"])
 //   repoRoot          absolute repo root (for the mechanical runners, which keep Bash)
-//   skeptics          refuters per round (default 2; the skill bumps to 3 for high-severity scopes)
+//   skeptics          refuters per round (default 3 — a true majority quorum; cap 3, Opus at medium effort)
 
 export const meta = {
   name: 'audit',
@@ -28,12 +28,12 @@ export const meta = {
   phases: [
     { title: 'Mechanical', detail: 'audit-runner team wraps the deterministic tools (cap 3)' },
     { title: 'Lenses', detail: 'isolated LLM lens finders, one per selected lens (cap 6)' },
-    { title: 'Refute', detail: 'skeptics vote on the full LLM-finding set; default refute when unconfirmable (cap <=3)' },
+    { title: 'Refute', detail: 'skeptics vote on the full LLM-finding set; default refute when unconfirmable (cap <=3; Opus refuters at medium effort)' },
     { title: 'Synthesis', detail: 'dedupe/rank survivors + mechanical; corroborated = pre-trusted; assign disposition' },
   ],
 }
 
-const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot, skeptics = 2 } = args
+const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot, skeptics = 3 } = args
 
 const RUNNER_SCHEMA = {
   type: 'object', additionalProperties: true,

@@ -2,8 +2,8 @@
 name: unit-test-author
 description: Writes unit-level tests for assigned work units that verify existing behavior. Internal to the straitjacket plugin — invoked during Phase 3 unit-author team dispatch (chunked parallel team).
 tools: Read, Grep, Glob, Write, Edit
-model: sonnet
-effort: high
+model: opus
+effort: low
 ---
 
 ## Role

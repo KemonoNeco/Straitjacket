@@ -3,7 +3,7 @@ name: audit-synthesis
 description: Synthesizes the audit refuter votes and the mechanical findings into the canonical audit result — dedupes overlapping LLM-and-tool findings into pre-trusted corroborated ones, keeps the refute-quorum survivors plus all mechanical/corroborated findings, drops (and logs) the refuted, surfaces the uncertain, ranks by severity, and assigns each survivor a final disposition with bridge fields filled. Internal to the straitjacket plugin — the audit capability's final merge. Distinct from adversarial-synthesis (which works on TEST reports; this works on SOURCE findings).
 tools: Read, Grep, Glob
 model: opus
-effort: xhigh
+effort: high
 ---
 
 ## Role
@@ -30,7 +30,7 @@ You work primarily from the votes and the findings you are handed. Unlike `adver
    - `survived` (>= half the skeptics voted `survive`) → keep. Set `refute_status: "survived"`.
    - `refuted` (the quorum did not reach the survive threshold) → drop from confirmed; record it in `refuted_findings` with the skeptics' reasons and `refute_status: "refuted"`. Do not file it.
    - `uncertain` (votes split with none confirming) → put in `uncertain_findings`, surfaced but **never auto-filed**. Set `refute_status: "uncertain"`.
-   - (You own the tally: you receive the raw per-skeptic vote sets and aggregate them yourself. The number of skeptics per finding is set upstream — a high-severity finding gets more refuters per the schema — but the count and the survive-threshold decision are yours to compute.)
+   - (You own the tally: you receive the raw per-skeptic vote sets and aggregate them yourself. The number of skeptics is set upstream as a flat per-run count — every finding is judged by the same skeptic pool — but the count and the survive-threshold decision are yours to compute.)
 
 4. **Keep all mechanical and corroborated findings** in `confirmed_findings` with `refute_status: "not_refuted"`.
 

@@ -2,7 +2,7 @@
 name: audit-performance
 description: Reviews assigned source in isolated context through the performance lens — needless allocation/cloning, O(n^2) on hot paths, blocking in async, redundant work, accidental quadratic complexity — and emits findings per the audit-finding schema. Internal to the straitjacket plugin — one of the audit capability's parallel lens finders. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
-model: opus
+model: sonnet
 effort: high
 ---
 

@@ -19,7 +19,7 @@
     "severity": {
       "type": "string",
       "enum": ["critical", "high", "medium", "low"],
-      "description": "Impact. Maps to BugRecord.severity. high-severity findings get 3 refuters instead of 2."
+      "description": "Impact. Maps to BugRecord.severity; used to rank confirmed survivors in synthesis."
     },
     "title": {
       "type": "string",

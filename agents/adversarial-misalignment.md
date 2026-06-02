@@ -3,7 +3,7 @@ name: adversarial-misalignment
 description: Critically reviews tests in isolated context for misalignment between the test and the locked intended_behavior. One of three adversarial specialists; outputs are synthesized by adversarial-synthesis. Internal to the straitjacket plugin — invoked during the plugin's adversarial-validation stage. Tool restriction (no Bash/PowerShell) is the load-bearing isolation guarantee.
 tools: Read, Grep, Glob
 model: opus
-effort: high
+effort: medium
 ---
 
 ## Role

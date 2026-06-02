@@ -29,7 +29,7 @@ often audit *because* the tree is unhealthy.
 - `<path>` — scope: a file, directory, or `crate::module` symbol. Absent → the repo source tree.
 - `--lenses a,b,c` — LLM lenses to run. Default: `latent-bug,error-handling,security,dead-code`.
 - `--all` — run all seven lenses (adds `performance,doc-drift,concurrency`).
-- `--skeptics N` — refuters per round (default 2; use 3 for a high-stakes audit).
+- `--skeptics N` — refuters per round (default 3 = cap, a true majority quorum; all Opus at `medium` effort). Lower with `--skeptics 2` for a cheaper/faster pass (degenerate quorum: 1 survive keeps).
 - `--no-file` — report only; do NOT write `bug_record` findings to the ledger.
 
 ## Preflight
@@ -84,6 +84,6 @@ mechanical_findings, lens_coverage, refutation_summary, synthesis_status }`. Wri
 
 ## Notes
 
-- Mostly Opus turns (the lens finders + refuter + synthesis) plus Haiku `audit-runner`s.
+- Opus for critical lenses (`latent-bug`, `security`, `concurrency`, `error-handling`); Opus at `medium` effort for the refuter skeptics (capability ceiling without the latency); Opus at `high` for synthesis; Sonnet for cosmetic lenses (`dead-code`, `doc-drift`, `performance`); Haiku for `audit-runner`s.
 - All artifacts live under `<repo>/.straitjacket/<run_id>/`; the bug ledger at
   `<repo>/.straitjacket/bugs.json` is tracked/committed. The CLI is on `PATH` via the plugin's `bin/`.
