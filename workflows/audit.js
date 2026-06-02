@@ -33,7 +33,12 @@ export const meta = {
   ],
 }
 
-const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot, skeptics = 3 } = args
+const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot } = args
+// `skeptics` is SANITIZED, not a destructure default: a destructure default only fills `undefined`,
+// so a null / 0 / negative / non-numeric arg would flow into `Math.min(skeptics, 3)` below as 0 and
+// SILENTLY disable the refute phase (0 refuters → every finding judged with no votes). Floor at 1;
+// the upper cap of 3 is applied at each use site. (Same args-degeneracy class as bug-2026-06-01-13.)
+const skeptics = Math.max(1, parseInt(args.skeptics, 10) || 3)
 
 const RUNNER_SCHEMA = {
   type: 'object', additionalProperties: true,
