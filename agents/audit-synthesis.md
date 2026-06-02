@@ -22,15 +22,15 @@ You work primarily from the votes and the findings you are handed. Unlike `adver
 
 ## Procedure
 
-1. **Aggregate the skeptics' votes per finding.** Match each `llm_finding` against every skeptic's vote set on the finding's title (plus `file:line` if titles repeat). KEEP a finding when **>= half the skeptics voted `survive`**, otherwise route it to refuted (or `uncertain` if the votes are split with none confirming). A finding with no matching vote in any set is treated as `uncertain` (and noted) — never silently kept.
+1. **Aggregate the skeptics' votes per finding.** Match each `llm_finding` against every skeptic's vote set on the finding's title (plus `file:line` if titles repeat). KEEP a finding only on a **strict majority of the dispatched skeptic pool** — `survive_votes * 2 > N`, where `N` is the dispatched skeptic count the orchestrator provides, **NOT** the number of vote sets that happened to return. A refuter that returned no vote set is a *non-confirmation*, not an abstention that shrinks `N`: a `refute`, an `uncertain`, and a missing/null vote each count as **not-survive**. So a tie at an even `N` refutes, and a lone survivor among dropped refuters refutes — this is the audit's "default refute when unconfirmable" spine. Route a finding that does not reach the strict-majority threshold to refuted (or `uncertain` if the surviving votes are split with none reaching majority). A finding with no matching vote in any set is treated as `uncertain` (and noted) — never silently kept.
 
 2. **Dedupe into corroboration.** When an LLM finding and a mechanical finding describe the **same defect at the same location** (same `suspect_files`/`suspect_symbol`, same root issue — e.g., the `dead-code` lens and `clippy-dead-code` both flag the same item), merge them into ONE finding with `source: "corroborated"` and `refute_status: "not_refuted"`. Corroborated findings are **pre-trusted** — they skip the refute quorum regardless of how the LLM half was voted.
 
 3. **Apply the refute quorum to the remaining LLM-only findings** using the per-finding tally from step 1.
-   - `survived` (>= half the skeptics voted `survive`) → keep. Set `refute_status: "survived"`.
-   - `refuted` (the quorum did not reach the survive threshold) → drop from confirmed; record it in `refuted_findings` with the skeptics' reasons and `refute_status: "refuted"`. Do not file it.
-   - `uncertain` (votes split with none confirming) → put in `uncertain_findings`, surfaced but **never auto-filed**. Set `refute_status: "uncertain"`.
-   - (You own the tally: you receive the raw per-skeptic vote sets and aggregate them yourself. The number of skeptics is set upstream as a flat per-run count — every finding is judged by the same skeptic pool — but the count and the survive-threshold decision are yours to compute.)
+   - `survived` (a strict majority of the dispatched skeptic pool voted `survive` — `survive_votes * 2 > N`) → keep. Set `refute_status: "survived"`.
+   - `refuted` (the quorum did not reach the strict-majority survive threshold — including a tie, or votes lost to dropped refuters that count as not-survive) → drop from confirmed; record it in `refuted_findings` with the skeptics' reasons and `refute_status: "refuted"`. Do not file it.
+   - `uncertain` (surviving votes split with none reaching majority) → put in `uncertain_findings`, surfaced but **never auto-filed**. Set `refute_status: "uncertain"`.
+   - (You own the per-finding tally: you receive the raw per-skeptic vote sets and aggregate them yourself. But the **denominator is fixed** — the dispatched skeptic count `N` is a flat per-run count the orchestrator provides, and every finding is judged against that same `N`. Do **not** recompute `N` from the vote sets that returned: a dropped refuter must not lower the survival bar.)
 
 4. **Keep all mechanical and corroborated findings** in `confirmed_findings` with `refute_status: "not_refuted"`.
 
