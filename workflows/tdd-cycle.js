@@ -38,7 +38,7 @@ export const meta = {
     { title: 'Coverage', detail: 'coverage-reviewer (single) locks intended_behavior from the spec' },
     { title: 'Author', detail: 'parallel test+stub authoring (compiles, fails at runtime)' },
     { title: 'RedCheck', detail: 'gate-runner run-new-tests --expect fail; branch on verdict' },
-    { title: 'PreAdversarial', detail: '3 specialists → synthesis on the RED tests; apply strengthenings' },
+    { title: 'PreAdversarial', detail: '3 specialists → synthesis on the RED tests; surface strengthenings (unapplied)' },
     { title: 'Implement', detail: 'implementation-author fills stubs; never touches tests' },
     { title: 'GreenCheck', detail: 'gate-runner run-new-tests --expect pass + name-survival' },
     { title: 'PostGreen', detail: 'post-green adversarial + (unless quick) mutation team' },
@@ -222,6 +222,7 @@ function specialistPrompt(dim, units, mode) {
 }
 
 // Run the 3-specialist → synthesis adversarial pass inline (mode: pre_impl | post_green).
+const ADVERSARIAL_SPECIALISTS = 3
 async function adversarial(units, mode) {
   const reports = (await parallel([
     () => agent(specialistPrompt('vacuousness', units, mode), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'vacuousness' }),
@@ -241,7 +242,13 @@ async function adversarial(units, mode) {
     `Return ONLY JSON matching the adversarial-synthesis output contract.`,
   ].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'synthesis' })
 
-  return { reports, synthesis }
+  // specialistsRun lets the caller detect a DROPPED specialist (issue #37): a null specialist return
+  // is filtered out above, silently shrinking the review from 3 lenses to fewer. The caller records
+  // any shortfall (and a null synthesis) as a DEGRADED quality phase that blocks a clean
+  // ready_to_commit — a review that ran incomplete must not read as "the review passed".
+  // (The `reports` array is used here to build `synthesis` + the run count; it is NOT returned —
+  // callers only need `synthesis` + the counts, so returning it was dead surface (issue #38).)
+  return { synthesis, specialistsRun: reports.length, specialistsExpected: ADVERSARIAL_SPECIALISTS }
 }
 
 // Cap-batched parallel fan-out: ~4 units per agent, `cap` agents in flight per wave.
@@ -303,6 +310,13 @@ const coveragePromptLines = (mode === 'target')
       `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
     ]
 const coverage = await agent(coveragePromptLines.join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
+// Distinguish a NULL agent return (the coverage-reviewer produced nothing after its retry budget)
+// from a successfully-empty plan (issue #37): both currently collapse to units=[] and the generic
+// "produced no work units" error, but only the latter is a real coverage verdict. Fail loudly and
+// specifically when the agent itself returned nothing rather than implying it ran and found none.
+if (!coverage) {
+  return { stage: 'tdd-cycle', error: 'coverage-reviewer returned nothing (agent produced no result after its retry budget) — refusing to proceed without a coverage plan', locked_contracts: [], ready_to_commit: false }
+}
 
 let units = (coverage && coverage.work_units) || []
 const lockedContracts = units.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
@@ -312,11 +326,32 @@ if (!units.length) {
 
 const surfacedBugs = []
 const survivingMutants = []
+const degraded = []                  // issue #37: non-fatal agent-phase failures (incomplete adversarial review /
+                                     // null synthesis). Green is REAL but a quality phase ran incomplete — so this
+                                     // blocks a clean ready_to_commit (the --auto-commit path acts on it with no
+                                     // human in the loop). Distinct from lastError, which is for false-green-capable
+                                     // (untested-behavior-reaching-commit) failures that break the loop.
+const preImplStrengthenings = []     // issue #38: pre-impl adversarial proposals, SURFACED (not authored).
+let mutationRunnersFailed = 0        // issue #37: dropped mutation-runner agents — NON-gating (mutation is advisory
+                                     // + --quick-skippable); counted/surfaced but never blocks ready_to_commit.
 let round = 0
 let lastError = null
 
 while (round < maxRounds && units.length) {
   round += 1
+
+  // Every unit must be routable to an author team. The two fanout selectors below match
+  // kind==='unit' / kind==='integration' with NO catch-all, so a unit with an absent or unrecognized
+  // kind would be selected by NEITHER team — never authored, never gated, left status:'pending' — yet
+  // still ride out in lockedContracts as a faithfully-enforced contract (issue #39). COVERAGE_SCHEMA
+  // does not constrain `kind` and coverage-reviewer is an LLM, so a missing/other kind is reachable.
+  // Fail the round loudly here rather than silently drop the unit. (Iterate-materialize already
+  // coerces kind to unit|integration, so in practice this guards round-1 coverage-reviewer output.)
+  const badKind = units.filter((u) => u.kind !== 'unit' && u.kind !== 'integration')
+  if (badKind.length) {
+    lastError = `coverage produced work unit(s) with an unrecognized kind (must be 'unit' or 'integration'): ${badKind.map((u) => `${u.id || '?'}:${u.kind === undefined ? 'undefined' : u.kind}`).join(', ')} — refusing to author a partial batch that would leave them silently uncovered`
+    break
+  }
 
   phase('Author')
   const unitResults = await fanout(units, (u) => u.kind === 'unit', authorCap, authorPrompt, 'straitjacket:unit-test-author', 'Author')
@@ -331,6 +366,19 @@ while (round < maxRounds && units.length) {
     if (r && r.work_unit_id && r.status) authoredStatusById.set(r.work_unit_id, r.status)
   }
   units = units.map((u) => authoredStatusById.has(u.id) ? { ...u, status: authoredStatusById.get(u.id) } : u)
+  // Fail CLOSED on partial author failure (issue #37). The reconcile above only updates the ids an
+  // author actually REPORTED, so a unit whose author chunk returned null (the agent exhausted its
+  // retries) — or that an author reported with a non-'written' status — keeps coverage's 'pending'.
+  // run-new-tests collects ONLY status=='written' (run_new_tests.rs:167-169), so an uncollectable unit
+  // is silently SKIPPED while its 'written' siblings keep nothing_to_run=false: the RedCheck guard
+  // never fires and the cycle can reach ready_to_commit on a never-authored contract (false green).
+  // With #39 guaranteeing every unit is unit|integration (so every unit IS selected by a fanout team),
+  // every unit must end 'written'; any that didn't means an author phase silently dropped work.
+  const uncollectable = units.filter((u) => u.status !== 'written')
+  if (uncollectable.length) {
+    lastError = `author phase left unit(s) uncollectable (status != 'written', so run-new-tests would silently skip them while written siblings ride to a false green): ${uncollectable.map((u) => `${u.id}:${u.status || 'unset'}`).join(', ')} — an author agent likely returned null after its retry budget`
+    break
+  }
 
   phase('RedCheck')
   // Bind + branch on the compile verdict BEFORE run-new-tests (issue #21): a non-compiling tree
@@ -363,8 +411,19 @@ while (round < maxRounds && units.length) {
 
   phase('PreAdversarial')
   const pre = await adversarial(units, 'pre_impl')
-  const strengthenings = (pre.synthesis && pre.synthesis.new_work_unit_proposals) || []
-  // Tests LOCK after this point (read-only). Strengthenings, if any, would be authored + re-red-checked.
+  // Record an INCOMPLETE pre-impl review as degraded (issue #37): a dropped specialist or a null
+  // synthesis means fewer than 3 adversarial lenses actually ran. The tests are red-confirmed and will
+  // be green-gated regardless, so this is NOT false-green-capable (not lastError) — but a review that
+  // ran incomplete must not read as a clean pass, so it blocks ready_to_commit below.
+  if (pre.specialistsRun < pre.specialistsExpected) degraded.push(`pre-impl adversarial review incomplete: only ${pre.specialistsRun}/${pre.specialistsExpected} specialists returned (a dropped specialist = a lost lens)`)
+  if (!pre.synthesis) degraded.push('pre-impl adversarial synthesis returned nothing — the review could not be consolidated')
+  // Tests LOCK after this point (read-only). The pre-impl pass SURFACES its proposed strengthenings in
+  // the cycle result rather than authoring them (issue #38): authoring + re-red-checking a new contract
+  // before lock is a separate feature with its own verification burden. The OLD behavior computed
+  // `strengthenings` then never read it, while meta.phases claimed the phase "applies" them — that
+  // silent discard is the defect. The main session now sees them as unapplied and can lift any into a
+  // follow-up run. A proposal EXISTING is not a failure and does NOT gate ready_to_commit.
+  preImplStrengthenings.push(...((pre.synthesis && pre.synthesis.new_work_unit_proposals) || []).map((p) => ({ ...p, round })))
 
   phase('Implement')
   await fanout(units, () => true, implCap, implPrompt, 'straitjacket:implementation-author', 'Implement')
@@ -407,6 +466,11 @@ while (round < maxRounds && units.length) {
 
   phase('PostGreen')
   const post = await adversarial(units, 'post_green')
+  // A failed post-green review must not read as "clean" (issue #37): a dropped specialist or a null
+  // synthesis means the post-green adversarial pass ran incomplete. Green is REAL (every unit passed
+  // the green gate above), so this is degraded, not lastError — but it blocks a clean ready_to_commit.
+  if (post.specialistsRun < post.specialistsExpected) degraded.push(`post-green adversarial review incomplete: only ${post.specialistsRun}/${post.specialistsExpected} specialists returned`)
+  if (!post.synthesis) degraded.push('post-green adversarial synthesis returned nothing — cannot confirm the post-green review found no further weaknesses')
   let roundMutants = []
   const tasks = (post.synthesis && post.synthesis.mutation_runner_tasks) || []
   const canMutate = !quick && (toolingAvailable.includes('cargo-mutants') || toolingAvailable.includes('dotnet-stryker') || toolingAvailable.includes('stryker'))
@@ -417,7 +481,13 @@ while (round < maxRounds && units.length) {
           `Run mutation testing for ${t.target_path || t.target_file} (scope: ${t.scope || 'file'}, stack: ${stack}).`,
           `repo_root: ${repoRoot}`, `Return surviving mutants as JSON.`,
         ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'PostGreen', label: `mutation:${t.target_path || t.target_file}` })))
-      roundMutants = roundMutants.concat(r.filter(Boolean).flatMap((m) => m.surviving_mutants || []))
+      // A dropped mutation-runner (null after retries) undercounts surviving mutants. This is
+      // explicitly NON-gating (issue #37): mutation is advisory + --quick-skippable, so a failed runner
+      // is COUNTED and surfaced but never blocks ready_to_commit (unlike the adversarial review above) —
+      // folding a non-gating concern into the commit gate would be its own no-silent-green inversion.
+      const returned = r.filter(Boolean)
+      mutationRunnersFailed += wave.length - returned.length
+      roundMutants = roundMutants.concat(returned.flatMap((m) => m.surviving_mutants || []))
     }
   }
   survivingMutants.push(...roundMutants)
@@ -476,15 +546,23 @@ const audit = testSnapshotPath
 // ready_to_commit incorporates the no-mutation audit verdict (issue #30): a flagged mutation
 // (audit.clean === false) blocks the commit; a skipped/absent/null audit must NOT false-block.
 const auditClean = !audit || audit.clean !== false
-const readyToCommit = !lastError && surfacedBugs.length === 0 && auditClean
+// ready_to_commit blocks on `degraded` too (issue #37): the --auto-commit path acts on this with NO
+// human in the loop, so an incomplete adversarial review / null synthesis must fail closed. (Fatal
+// false-green-capable failures already set lastError and broke the loop; `degraded` is the "green is
+// real but a quality phase ran incomplete" tier.) Mutation-runner failures are deliberately EXCLUDED
+// (non-gating), and pre_impl_strengthenings existing is NOT a failure — neither gates the commit.
+const readyToCommit = !lastError && surfacedBugs.length === 0 && auditClean && degraded.length === 0
 
 return {
   stage: 'tdd-cycle',
   rounds_run: round,
   error: lastError,
-  locked_contracts: lockedContracts,        // surfaced NON-BLOCKING in the summary (contract-review removed)
+  degraded,                                  // issue #37: incomplete quality phases (strings) — blocks ready_to_commit
+  locked_contracts: lockedContracts,         // surfaced NON-BLOCKING in the summary (contract-review removed)
   surfaced_bugs: surfacedBugs,               // main session: park-vs-fix + report-bug
+  pre_impl_strengthenings: preImplStrengthenings,  // issue #38: proposed test strengthenings, SURFACED (not authored)
   surviving_mutants: survivingMutants,
+  mutation_runners_failed: mutationRunnersFailed,  // issue #37: dropped mutation-runner agents (NON-gating, advisory)
   no_mutation_audit: audit,
   ready_to_commit: readyToCommit,            // main session commits the savepoint on green (or --auto-commit)
 }

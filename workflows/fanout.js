@@ -15,7 +15,7 @@
 
 export const meta = {
   name: 'fanout',
-  description: 'Generic capped parallel dispatch of authoring/implementation agents. The skill builds each task prompt and chooses the agentType; the script runs them in parallel within the cap and returns per-task structured results. Used by tdd authoring (B) + implementation (D) and straitjacket Phase 3.',
+  description: 'Generic capped parallel dispatch of agent tasks. The skill builds each task prompt and chooses the agentType; the script runs them in parallel within the cap and returns per-task structured results (incl. an `attempted` count for partial-dispatch detection). Consumed by the mutation and fuzz skills\' runner teams. NOTE: tdd-cycle does NOT use this stage — it inlines its own fanout() because workflow scripts cannot import one another.',
   phases: [
     { title: 'Fanout', detail: 'parallel agent tasks, batched to the cap' },
   ],
@@ -56,5 +56,9 @@ for (let i = 0; i < tasks.length; i += step) {
 
 // `results`: per-chunk {results:[...]} flattened for the authoring/impl merge path.
 // `raw`: every chunk verbatim, so runner shapes ({surviving_mutants}/{crashes}) survive.
+// `attempted` vs `chunk_count`: tasks DISPATCHED vs chunks that RETURNED a non-null result. A gap means
+// an agent returned null after its retry budget and was dropped by the .filter(Boolean) above — so a
+// consumer (the mutation / fuzz skills; tdd-cycle uses its own INLINE fanout(), not this stage) can
+// detect partial dispatch failure instead of mistaking a shrunken result for a complete one (issue #37).
 const results = chunkResults.flatMap((c) => (c && Array.isArray(c.results)) ? c.results : [])
-return { stage: 'fanout', chunk_count: chunkResults.length, results, raw: chunkResults }
+return { stage: 'fanout', attempted: tasks.length, chunk_count: chunkResults.length, results, raw: chunkResults }
