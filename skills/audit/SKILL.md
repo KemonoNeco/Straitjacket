@@ -71,6 +71,23 @@ mechanical_findings, lens_coverage, refutation_summary, synthesis_status }`. Wri
 - **`uncertain_findings`** → surface in the summary, clearly labelled "unconfirmed — not filed."
 - **`refuted_findings`** → an appendix only (dropped, logged for transparency).
 
+### Capture gate (MANDATORY, blocking — the deterministic gate issue #15 requires)
+
+A hard gate, not advice: you **MUST NOT** emit a `done` verdict while any confirmed defect is
+unfiled. Unless `--no-file`, after filing the `bug_record` findings (above), run this sequence as
+the audit's done-path — do **not** present the Final summary until it passes:
+
+1. Write the confirmed `bug_record` findings as a bare array of `{work_unit_id, target_file}`
+   (finding id/title → `work_unit_id`, first `suspect_files` entry → `target_file`) to
+   `<repo>/.straitjacket/<run_id>/surfaced-findings.json`.
+2. Run `straitjacket verify-surfaced-bugs-captured --repo-root <repo_root> --findings-file <that file>`.
+3. **If it exits non-zero** (it lists `uncaptured` — a confirmed defect's `target_file` absent from
+   every ledger record's `suspect_files`): re-file those via `report-bug` (its dedupe guard makes
+   the re-run safe) and **return to step 2**. Repeat until the gate exits 0.
+
+(`no_findings_checked:true` with exit 0 = there were no `bug_record` findings, a clean pass; under
+`--no-file` the skill files nothing, so this gate is skipped.)
+
 ## Final summary (present verbatim)
 
 - **Run metadata**: run_id, stack, lenses run, tools run (+ degraded/absent).

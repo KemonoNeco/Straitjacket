@@ -78,11 +78,19 @@ no_mutation_audit, ready_to_commit, error }`.
    run, invoke `straitjacket:report-bug` (map `target_file`/`target_symbol`/`intended_behavior_seed`
    → the bug's `suspect_files`/`suspect_symbol`/`intended_behavior_seed`). Never weaken a test to
    clear one.
-3. **`ready_to_commit` true and not `--no-commit`** → run the new tests once more to confirm green,
+3. **Capture gate (MANDATORY, blocking — issue #15; runs only when `surfaced_bugs` is non-empty)**
+   → a hard gate, not advice: after filing (step 2), confirm none was dropped before declaring done.
+   (a) Write `surfaced_bugs` (already `{work_unit_id, target_file, …}`-shaped) to
+   `<repo>/.straitjacket/<run_id>/surfaced-findings.json`; (b) run
+   `straitjacket verify-surfaced-bugs-captured --repo-root <repo_root> --findings-file <that file>`;
+   (c) if it exits non-zero (`uncaptured` non-empty — a surfaced bug never reached the ledger), file
+   it (re-runs are dedupe-safe) and return to (b). **Do NOT report the run complete or treat
+   `ready_to_commit` as final until the gate exits 0.**
+4. **`ready_to_commit` true and not `--no-commit`** → run the new tests once more to confirm green,
    then **commit the savepoint** (QA'd green). This is the only commit point.
-4. **`surviving_mutants`** → already fed back into the cycle's own iteration up to `--max-rounds`;
+5. **`surviving_mutants`** → already fed back into the cycle's own iteration up to `--max-rounds`;
    report any that remain as known coverage gaps.
-5. **Any part of the work not TDD-verifiable** (a piece that landed in non-unit-tested orchestration
+6. **Any part of the work not TDD-verifiable** (a piece that landed in non-unit-tested orchestration
    — `workflows/*.js`, `skills/*/SKILL.md`, `agents/*.md`, `hooks.json` — or otherwise has no test
    seam) → before declaring done, **verify it via `straitjacket:audit`** scoped to those file(s)
    ([STAGES.md](../../docs/STAGES.md) rule 8) and state the basis (*audit-checked + live-run-guarded*,
