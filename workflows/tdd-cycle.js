@@ -155,7 +155,12 @@ function packGroups(writerGroups, targetSize) {
 // proceed on bogus data — this is the workflow path's ONLY compile gate (the PostToolUse hook does
 // not fire for workflow-spawned agents).
 function compileFailure(verdict, label) {
-  if (verdict && verdict.all_passed === false) {
+  // Fail CLOSED (issue #21 + PR review): a null/missing verdict means the gate-runner produced no
+  // result — treat that as a failure to verify the compile, never a silent pass into run-new-tests.
+  if (!verdict) {
+    return `${label}: compile gate produced no verdict (gate-runner returned nothing) — refusing to proceed on an unverified compile`
+  }
+  if (verdict.all_passed === false) {
     const failed = (verdict.per_unit_results || []).filter((u) => u && u.passed === false)
     const detail = failed.map((u) => `${u.output_file_path || u.work_unit_id}: ${u.diagnostics_excerpt || 'compile failed'}`).join(' | ')
     return `${label}: new tests/stubs did not compile — ${detail || 'see compile log'}`
@@ -335,7 +340,7 @@ while (round < maxRounds && units.length) {
   // A vacuous pre-impl test PASSED against the unimplemented stub — it asserts nothing real and
   // must never be silently accepted (issue #20): surface each and fail this round loudly. (The
   // engine already classifies these 'rejected_lint'; only the JS used to compute-then-drop them.)
-  const vacuous = (red.per_unit_results || []).filter((u) => u.classification === 'vacuous_pre_impl')
+  const vacuous = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'vacuous_pre_impl')
   if (vacuous.length) {
     for (const vu of vacuous) {
       const wu = units.find((u) => u.id === vu.work_unit_id)
@@ -372,8 +377,8 @@ while (round < maxRounds && units.length) {
   // the old name compare was vacuous, `missing` always []). Every test that RAN at red must still
   // exist at green; one that is gone/non-executing (never_found) is a test-mutation cheat
   // (deleted/renamed/#[ignore]-d) and fails loudly.
-  const greenByUnit = new Map((green.per_unit_results || []).map((u) => [u.work_unit_id, u]))
-  const redRan = (red.per_unit_results || []).filter((u) => u.classification && u.classification !== 'never_found')
+  const greenByUnit = new Map((green.per_unit_results || []).filter(Boolean).map((u) => [u.work_unit_id, u]))
+  const redRan = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification && u.classification !== 'never_found')
   const survivalViolations = redRan
     .filter((ru) => { const gu = greenByUnit.get(ru.work_unit_id); return !gu || gu.classification === 'never_found' })
     .map((ru) => ru.work_unit_id)
@@ -383,7 +388,7 @@ while (round < maxRounds && units.length) {
   }
   // ready_to_commit must never be true with a green unit that did not CLEANLY pass (issue #29):
   // surface EVERY non-all_pass classification (all_fail / flaky / never_found), not just all_fail.
-  const notPassing = (green.per_unit_results || []).filter((u) => u.classification !== 'all_pass')
+  const notPassing = (green.per_unit_results || []).filter(Boolean).filter((u) => u.classification !== 'all_pass')
   for (const fu of notPassing) {
     const wu = units.find((u) => u.id === fu.work_unit_id)
     surfacedBugs.push({
