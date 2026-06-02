@@ -99,8 +99,8 @@ red-check → pre-impl adversarial → implement → green-check → post-green 
 iterating to a cap. Gates run via the `gate-runner` agent and the script branches on the verdict.
 Inlines the `fanout` + 3-specialist→synthesis choreography (scripts can't import one another).
 
-- **args:** `{spec, stack, repoRoot, outputDir, workUnitsPath, testSnapshotPath, toolingAvailable, maxRounds, quick}`.
-- **returns:** `{rounds_run, locked_contracts, surfaced_bugs, surviving_mutants, no_mutation_audit, ready_to_commit, error}`. No interactive contract-review — contracts are surfaced non-blocking.
+- **args:** `{spec, mode, targetFile, targetSymbol, intendedBehaviorSeed, stack, repoRoot, outputDir, workUnitsPath, testSnapshotPath, toolingAvailable, maxRounds, quick, authorCap, implCap}`. `mode` is `spec` (greenfield, default) or `target` (fix mode); in `target` mode the Coverage phase runs `coverage-reviewer` in TARGET mode, mapping `targetFile`/`targetSymbol` and passing `intendedBehaviorSeed` **verbatim** as the locked contract (the triage fix-mode seam #1 — see Fix mode below). Spec mode is unchanged when no `mode`/target is supplied.
+- **returns:** `{rounds_run, locked_contracts, surfaced_bugs, surviving_mutants, no_mutation_audit, ready_to_commit, error}`. No interactive contract-review — contracts are surfaced non-blocking. `no_mutation_audit` is `{skipped:true}` when no `testSnapshotPath` was supplied (the gate needs a snapshot); when it ran, a not-clean verdict forces `ready_to_commit:false`.
 
 ### `audit`
 
