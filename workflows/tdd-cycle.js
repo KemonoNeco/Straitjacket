@@ -58,11 +58,20 @@ const {
   workUnitsPath,
   testSnapshotPath,
   toolingAvailable = [],
-  maxRounds = 3,
   quick = false,
-  authorCap = 6,
-  implCap = 4,
 } = args
+
+// Sanitize the numeric caps — do NOT destructure-default them (Gemini review on PR #50). A destructure
+// default only fills `undefined`, so a null / 0 / negative / non-numeric `maxRounds` flows straight into
+// `while (round < maxRounds && units.length)` below, where `round(0) < null` / `< "x"` is false on the
+// FIRST check — the entire cycle is skipped and the run returns ready_to_commit:true with ZERO tests
+// authored (a silent fail-open, the exact class this file hardens; also an instance of issue #49). Floor
+// each at a positive integer. Mirrors audit.js's `skeptics` sanitization and the chunk() clamp (issue
+// #31); authorCap/implCap are additionally clamped inside chunk(), but sanitizing at the source closes
+// the maxRounds fail-open and keeps the contract honest.
+const maxRounds = Math.max(1, parseInt(args.maxRounds, 10) || 3)
+const authorCap = Math.max(1, parseInt(args.authorCap, 10) || 6)
+const implCap = Math.max(1, parseInt(args.implCap, 10) || 4)
 
 // ---- schemas (mirror the agent output contracts) -------------------------------------
 
