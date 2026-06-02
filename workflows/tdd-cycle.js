@@ -191,7 +191,7 @@ async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName)
 }
 
 if (!args || typeof args !== 'object' || Array.isArray(args)) {
-  throw new Error(`straitjacket:tdd-cycle — args must be a plain object, got ${Array.isArray(args) ? 'Array' : typeof args}; pass { spec, stack, repoRoot, ... } not a CLI string`)
+  throw new Error(`straitjacket:tdd-cycle — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { spec, stack, repoRoot, ... } not a CLI string`)
 }
 if (!spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
 

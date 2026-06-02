@@ -81,9 +81,9 @@ function specialistPrompt(dim) {
 }
 
 if (!args || typeof args !== 'object' || Array.isArray(args)) {
-  throw new Error(`straitjacket:adversarial — args must be a plain object, got ${Array.isArray(args) ? 'Array' : typeof args}; pass { workUnits, stack, mode, ... } not a CLI string`)
+  throw new Error(`straitjacket:adversarial — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { workUnits, stack, mode, ... } not a CLI string`)
 }
-if (!workUnits || !workUnits.length) throw new Error('straitjacket:adversarial — required arg `workUnits` must be a non-empty array')
+if (!Array.isArray(workUnits) || !workUnits.length) throw new Error('straitjacket:adversarial — required arg `workUnits` must be a non-empty array')
 if (!mode) throw new Error('straitjacket:adversarial — required arg `mode` is missing (must be "pre_impl" | "post_green" | "lock")')
 
 phase('Specialists')
