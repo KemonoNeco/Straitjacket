@@ -62,6 +62,12 @@ function chunk(arr, size) {
   return out
 }
 
+if (!args || typeof args !== 'object' || Array.isArray(args)) {
+  throw new Error(`straitjacket:audit — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { auditScope, stack, lenses, ... } not a CLI string`)
+}
+if (!auditScope || (Array.isArray(auditScope) && !auditScope.length)) throw new Error('straitjacket:audit — required arg `auditScope` is missing or empty')
+if (!Array.isArray(lenses) || !lenses.length) throw new Error('straitjacket:audit — required arg `lenses` must be a non-empty array')
+
 // ---- Mechanical: one audit-runner per tool, cap 3 (the plugin's mechanical-team cap) ----
 phase('Mechanical')
 let mechanicalFindings = []

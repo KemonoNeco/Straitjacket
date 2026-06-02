@@ -42,6 +42,10 @@ const CHUNK_RESULT_SCHEMA = {
   },
 }
 
+if (!args || typeof args !== 'object' || Array.isArray(args)) {
+  throw new Error(`straitjacket:fanout — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { tasks: [...], cap } not a CLI string`)
+}
+
 phase('Fanout')
 let chunkResults = []
 for (let i = 0; i < tasks.length; i += step) {

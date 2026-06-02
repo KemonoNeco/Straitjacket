@@ -31,7 +31,8 @@ workflow, the dispatch convention, and the run-state layout — lives once in
 
 > **Not `atlassian:triage-issue`.** That does interactive Jira *duplicate-hunting* against a remote
 > tracker. **This** drives a tracked bug — already in the local ledger, or imported from its remote
-> issue — to a verified diagnosis and, where the loop allows, a green fix.
+> issue — to a verified diagnosis and a fix: test-first for testable code, hand-authored +
+> audit-verified for orchestration.
 
 ## Args
 
@@ -51,10 +52,10 @@ workflow, the dispatch convention, and the run-state layout — lives once in
 2. Read `<repo>/.straitjacket/bugs.json` (create an empty `{ "bugs": [] }` if absent). Select the
    target `open`/`mirrored` record(s) per the args, capped at `--max`. **EXCLUDE records already
    dispositioned `verified-by-analysis`** (they carry the `triage:verified-by-analysis` label — see
-   that terminal below) from the *(none)* / `--scope` / `all-open` pools: they are terminal until new
-   evidence and would otherwise be re-debugged on every run (an infinite loop). They are re-processed
-   **only when named explicitly** by `--id` or `--github <that issue>` (an explicit name = "re-open it,
-   I have new evidence").
+   **Verified-by-analysis → Hand-authored fix** below) from the *(none)* / `--scope` / `all-open`
+   pools: these have already been triaged (verified + fix applied or confirmed unfixable) and would
+   otherwise be re-processed on every run. They are re-processed **only when named explicitly** by
+   `--id` or `--github <that issue>` (an explicit name = "something changed, re-open it").
 3. **Ingest any unrecorded target (reverse-mirror import).** For each `--github` target (or each
    open `bug`-labeled issue under `all-open`) with **no** matching ledger record (matched on
    `remote.github.number` + `remote.github.repo`), pull it into the ledger — **you are the single
@@ -123,34 +124,39 @@ Write the analyst's `root_cause` + `reproduction` + the three bridge fields back
 | Debug result | Target | → Route |
 |---|---|---|
 | `reproduced: true` | testable code (Rust/C# crate) | **Fix mode** (below) |
-| `reproduced: false` **but confirmed by a high-confidence code-trace** | any | **Verified-by-analysis** (terminal) |
-| reproduced or not | hand-authored orchestration (no test harness) | **Verified-by-analysis** (terminal) |
+| `reproduced: false` **but confirmed by a high-confidence code-trace** | any | **Verified-by-analysis → Hand-authored fix** (below) |
+| reproduced or not | hand-authored orchestration (no test harness) | **Verified-by-analysis → Hand-authored fix** (below) |
 | `reproduced: false` **AND not confirmed** (low confidence — the analyst could not reproduce *or* localize it) | testable code | **ESCALATE** — leave `open`/`mirrored` as an unverified claim; do **NOT** mark `verified-by-analysis` (nothing was verified) and do **NOT** enter Fix mode. Surface loudly in the summary with what the analyst tried. |
 
 **Do NOT auto-fall-through into Fix mode after debug.** Fix mode is the tdd loop; it only applies to
 a *reproduced defect in testable code*. A *high-confidence* code-trace confirmation, or any
-orchestration target, routes to **Verified-by-analysis** below. An **unconfirmed** claim
+orchestration target, routes to **Verified-by-analysis → Hand-authored fix** below. An **unconfirmed** claim
 (`reproduced: false` *and* no high-confidence code-trace) is **not** verified — it ESCALATES and
 stays `open`; never launder an unconfirmed claim into `verified-by-analysis`.
 
-### Verified-by-analysis (terminal — fix is out-of-loop)
+### Verified-by-analysis → Hand-authored fix
 
-The defect is confirmed but cannot be driven to a green test through the tdd loop — either it was
-verified by code-trace only (`reproduced: false`), or it lives in **hand-authored orchestration**
-(`workflows/*.js`, `skills/**`, `agents/*.md`, `hooks*.json`), which **has no unit-test harness** and
-is **live-run-guarded, not test-backed** (see [`CLAUDE.md` / `docs/STAGES.md`]). Here triage's honest
-ceiling is *verification*, not a tested fix:
+The defect is confirmed but cannot be driven through the TDD loop — either it was verified by
+code-trace only (`reproduced: false`), or it lives in **hand-authored orchestration**
+(`workflows/*.js`, `skills/**`, `agents/*.md`, `hooks*.json`), which has no unit-test harness.
+Verification is followed immediately by the fix — do not stop at verification:
 
-- Append the analyst's `root_cause` + code-trace evidence to the record's `notes`; refresh the
-  bridge fields. **Leave `status` as `mirrored`/`open` — never flip to `fixed`** (there is no green
-  test covering it). Do not enter Fix mode.
-- **Add the `triage:verified-by-analysis` label** to the record (you are the single writer). This is
-  the durable marker Preflight step 2 excludes on, so this record is **not re-debugged on every
-  subsequent run** — it is terminal until someone re-opens it explicitly by `--id`/`--github` with new
-  evidence. Without this marker an unreproduced record would loop back through DEBUG forever.
-- Surface in the summary as **`verified-by-analysis`**, and state plainly that the fix is a
-  **hand-authored / live-run-guarded** change outside the tdd loop — *that hand-authored fix is its
-  own task, not part of this triage run* unless the user asks for it.
+1. Append the analyst's `root_cause` + code-trace evidence to the record's `notes`; refresh the
+   bridge fields. **Leave `status` as `mirrored`/`open`** — no green test was produced, so the
+   test-gated `fixed` flip is unearned. Do not enter TDD Fix mode.
+2. **Add the `triage:verified-by-analysis` label** (you are the single writer). This is the
+   durable re-processing guard — Preflight step 2 excludes it from the *(none)* / `--scope` /
+   `all-open` pools so the record is not re-triaged on every run. Without this marker an
+   unreproduced record would loop back through DEBUG forever.
+3. **Apply the hand-authored fix.** You write this directly — Cardinal Rule 0 ("never write test
+   or impl code yourself") scopes to the TDD loop's author agents; hand-authored edits to
+   orchestration files with no test seam are explicitly outside that scope (see `CLAUDE.md`). Base
+   the fix on the analyst's `root_cause` and the record's `intended_behavior_seed`.
+4. **Verify via `straitjacket:audit`** scoped to the changed file(s)
+   ([STAGES.md](../../docs/STAGES.md) rule 8). "Live-run-guarded" alone is too weak. Record the
+   audit basis (*audit-checked + live-run-guarded, not test-backed*) in the record `notes`.
+5. **Commit the savepoint.** If the record has a `remote.github`, the commit MUST carry
+   `Closes <remote.github.url>` — the issue auto-closes on PR merge to the default branch.
 
 ### Reproduced & complete in testable code — FIX MODE (the correctness pivot)
 
@@ -206,13 +212,10 @@ Not a real defect or already tracked → `straitjacket bug-status --repo-root <r
   `straitjacket:report-bug` as a new record; never fold it into the one you're triaging.
 - **Fix target not TDD-verifiable** (the fix lands in non-unit-tested orchestration —
   `workflows/*.js`, `skills/*/SKILL.md`, `agents/*.md`, `hooks.json` — or otherwise has no test
-  seam) → the test-gated `fixed` flip (fix-mode seam #2) is **unmeetable by design**. Do **not**
-  fake or weaken a test to clear it. Apply the hand-authored fix, then **verify it via
-  `straitjacket:audit`** scoped to the changed file(s) ([STAGES.md](../../docs/STAGES.md) rule 8) —
-  "live-run-guarded" alone is too weak. Record the basis (*audit-checked + live-run-guarded, not
-  test-backed*) in the record note and summary, and leave the record `open`/`mirrored` (a
-  test-gated `fixed` is not earned) unless the user explicitly directs the disposition. Reserve
-  this for code the loop truly can't reach — **testable code still goes through fix mode.**
+  seam) → follow the **Verified-by-analysis → Hand-authored fix** route above: apply the fix, verify
+  via `straitjacket:audit`, commit. Do **not** fake or weaken a test to clear it. The test-gated
+  `fixed` flip is not earned; leave the record `open`/`mirrored`. Reserve this path for code the
+  loop truly can't reach — **testable code still goes through fix mode.**
 - **You remain the single ledger writer** for the whole run — all status transitions and
   bridge-field writebacks go through this session (`bug-status` / direct edits), never a sub-agent.
 
@@ -221,7 +224,7 @@ Not a real defect or already tracked → `straitjacket bug-status --repo-root <r
 Per record:
 
 - **Bug id** + title, and its **disposition**: `imported` (newly reverse-mirrored from a remote
-  issue this run) / `debugged → fixed` / `fixed` / `verified-by-analysis (fix out-of-loop)` /
+  issue this run) / `debugged → fixed` / `fixed` / `debugged → hand-authored fix + audited` /
   `wontfix` / `duplicate` / `escalated (could not verify or fix — left open)`.
 - **Test(s) added**: the new test name(s) that lock the correct behavior.
 - **Fix**: files + symbols the `implementation-author` touched.
