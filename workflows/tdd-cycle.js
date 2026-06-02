@@ -270,6 +270,18 @@ async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName)
   return results
 }
 
+// bail(error): an early-exit result carrying the COMPLETE shape the final return uses, so a caller
+// can uniformly read result.surfaced_bugs / .degraded / .pre_impl_strengthenings on the refusal
+// paths without a TypeError (all early exits are pre-loop, hence rounds_run:0). Addresses Gemini
+// review on PR #48 (API consistency) -- keeps EVERY early return consistent instead of just one.
+function bail(error) {
+  return {
+    stage: 'tdd-cycle', rounds_run: 0, error,
+    degraded: [], locked_contracts: [], surfaced_bugs: [], pre_impl_strengthenings: [],
+    surviving_mutants: [], mutation_runners_failed: 0, no_mutation_audit: null, ready_to_commit: false,
+  }
+}
+
 if (!args || typeof args !== 'object' || Array.isArray(args)) {
   throw new Error(`straitjacket:tdd-cycle — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { spec, stack, repoRoot, ... } not a CLI string`)
 }
@@ -287,7 +299,7 @@ phase('Coverage')
 // reviewer an EMPTY authoritative contract → it would re-infer the buggy behavior (the very thing
 // this seam exists to prevent). Fail loudly instead — mirroring the iterate-materialize guard.
 if (mode === 'target' && (!intendedBehaviorSeed || String(intendedBehaviorSeed).trim().length < 10)) {
-  return { stage: 'tdd-cycle', error: 'target/fix mode requires a non-empty intendedBehaviorSeed (the authoritative locked contract); refusing to run coverage-reviewer without one — an empty seed would force it to re-infer the buggy behavior', locked_contracts: [], ready_to_commit: false }
+  return bail('target/fix mode requires a non-empty intendedBehaviorSeed (the authoritative locked contract); refusing to run coverage-reviewer without one — an empty seed would force it to re-infer the buggy behavior')
 }
 const coveragePromptLines = (mode === 'target')
   ? [
@@ -315,13 +327,20 @@ const coverage = await agent(coveragePromptLines.join('\n'), { agentType: 'strai
 // "produced no work units" error, but only the latter is a real coverage verdict. Fail loudly and
 // specifically when the agent itself returned nothing rather than implying it ran and found none.
 if (!coverage) {
-  return { stage: 'tdd-cycle', error: 'coverage-reviewer returned nothing (agent produced no result after its retry budget) — refusing to proceed without a coverage plan', locked_contracts: [], ready_to_commit: false }
+  return bail('coverage-reviewer returned nothing (agent produced no result after its retry budget) — refusing to proceed without a coverage plan')
 }
 
 let units = (coverage && coverage.work_units) || []
+// Guard a null / non-object work_units element (issue #37 robustness; Gemini review on PR #48).
+// COVERAGE_SCHEMA constrains work_units to an array but NOT its items, so an LLM emitting a null or
+// garbage element would crash at lockedContracts (u.id on null) -- the FIRST per-element access,
+// which is why guarding only the later badKind/uncollectable filters is incomplete. Fail at source.
+if (units.some((u) => !u || typeof u !== 'object')) {
+  return bail('coverage-reviewer emitted a null or non-object work unit -- refusing to proceed on a malformed coverage plan')
+}
 const lockedContracts = units.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
 if (!units.length) {
-  return { stage: 'tdd-cycle', error: 'coverage-reviewer produced no work units', locked_contracts: [], ready_to_commit: false }
+  return bail('coverage-reviewer produced no work units')
 }
 
 const surfacedBugs = []
