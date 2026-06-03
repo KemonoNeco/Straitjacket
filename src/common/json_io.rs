@@ -1,16 +1,20 @@
 use anyhow::Context;
 use serde::{de::DeserializeOwned, Serialize};
 use std::fs::{self, File};
-use std::io::{BufReader, BufWriter, Write};
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
 /// Reads a JSON file at `path` and deserializes into `T`. UTF-8 encoding assumed.
 /// Returns an error if the file is missing or contains invalid JSON.
+///
+/// A single leading UTF-8 BOM (`EF BB BF` / `U+FEFF`) is stripped before parsing, since
+/// `serde_json` does not treat it as whitespace and would otherwise reject the file. Only
+/// the 3-byte UTF-8 BOM is handled; a non-UTF-8 file still errors at the read-to-string step.
 pub fn read_json_file<T: DeserializeOwned>(path: &Path) -> anyhow::Result<T> {
-    let file = File::open(path)
+    let text = fs::read_to_string(path)
         .with_context(|| format!("failed to open {}", path.display()))?;
-    let reader = BufReader::new(file);
-    let value: T = serde_json::from_reader(reader)
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    let value: T = serde_json::from_str(text)
         .with_context(|| format!("failed to parse JSON from {}", path.display()))?;
     Ok(value)
 }
@@ -213,6 +217,39 @@ mod tests {
             let arr = parse_work_units_array(&v);
             assert!(arr.is_none(), "scalar {v:?} must yield None, got: {arr:?}");
         }
+    }
+
+    /// Adversarial-review #wu-jsonio-001 (LOW): UTF-8 multibyte round-trip.
+    /// Fix #bug-2026-06-02-11: a leading UTF-8 BOM (EF BB BF) must be tolerated.
+    /// Currently `serde_json::from_reader` over raw bytes fails with
+    /// "expected value at line 1 column 1". The BOM-prefixed file must parse to
+    /// the SAME value as the BOM-free file.
+    #[test]
+    fn read_strips_leading_utf8_bom_and_parses() {
+        let td = TempDir::new().unwrap();
+
+        let json = br#"{"name":"alice","value":42,"tags":["one","two"]}"#;
+
+        // BOM-free file: the reference value.
+        let plain_path = td.path().join("plain.json");
+        fs::write(&plain_path, json).unwrap();
+        let from_plain: Sample = read_json_file(&plain_path).unwrap();
+
+        // BOM-prefixed file: 3 raw BOM bytes followed by the identical JSON.
+        let bom_path = td.path().join("bom.json");
+        let mut bytes = Vec::with_capacity(3 + json.len());
+        bytes.extend_from_slice(b"\xEF\xBB\xBF");
+        bytes.extend_from_slice(json);
+        fs::write(&bom_path, &bytes).unwrap();
+
+        let from_bom: Sample = read_json_file(&bom_path)
+            .expect("BOM-prefixed but otherwise-valid JSON must parse");
+
+        assert_eq!(
+            from_bom, from_plain,
+            "BOM-prefixed file must deserialize to the same value as the BOM-free file"
+        );
+        assert_eq!(from_bom, sample());
     }
 
     /// Adversarial-review #wu-jsonio-001 (LOW): UTF-8 multibyte round-trip.

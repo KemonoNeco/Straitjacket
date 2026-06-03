@@ -33,12 +33,35 @@ export const meta = {
   ],
 }
 
-const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot } = args
+// Normalize + validate `args` before consuming it (issues #54 + #58). The Workflow runtime can deliver
+// `args` as a JSON STRING of a valid object; parse-and-adopt it when it is a plain object, else keep the
+// original. Then run the plain-object guard BEFORE the destructure (so null/undefined yields this
+// actionable message, not a raw TypeError — #58) and before the cfg.skeptics read below. A genuine
+// non-object / CLI-string still fails loudly — NARROWS #36, does not remove it. Routed through a local
+// `cfg`, NOT a reassignment of the injected `args` global (mutability is runtime-dependent).
+let cfg = args
+let _argParseErr = ''   // when args is a string that doesn't yield a plain object, carry the reason into the guard message
+if (typeof cfg === 'string') {
+  try {
+    const _p = JSON.parse(cfg)
+    if (_p && typeof _p === 'object' && !Array.isArray(_p)) {
+      cfg = _p
+    } else {
+      _argParseErr = ` (parsed as ${_p === null ? 'null' : (Array.isArray(_p) ? 'Array' : typeof _p)} but expected a plain object)`
+    }
+  } catch (e) {
+    _argParseErr = ` (looks like a string but is not parseable JSON: ${e && e.message})`
+  }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+  throw new Error(`straitjacket:audit — args must be a plain object, got ${cfg === null ? 'null' : (Array.isArray(cfg) ? 'Array' : typeof cfg)}${_argParseErr}; pass { auditScope, stack, lenses, ... } not a CLI string`)
+}
+const { auditScope, stack, lenses = [], mechanicalTools = [], repoRoot } = cfg
 // `skeptics` is SANITIZED, not a destructure default: a destructure default only fills `undefined`,
 // so a null / 0 / negative / non-numeric arg would flow into `Math.min(skeptics, 3)` below as 0 and
 // SILENTLY disable the refute phase (0 refuters → every finding judged with no votes). Floor at 1;
 // the upper cap of 3 is applied at each use site. (Same args-degeneracy class as bug-2026-06-01-13.)
-const skeptics = Math.max(1, parseInt(args.skeptics, 10) || 3)
+const skeptics = Math.max(1, parseInt(cfg.skeptics, 10) || 3)
 
 const RUNNER_SCHEMA = {
   type: 'object', additionalProperties: true,
@@ -67,9 +90,7 @@ function chunk(arr, size) {
   return out
 }
 
-if (!args || typeof args !== 'object' || Array.isArray(args)) {
-  throw new Error(`straitjacket:audit — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { auditScope, stack, lenses, ... } not a CLI string`)
-}
+// (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
 if (!auditScope || (Array.isArray(auditScope) && !auditScope.length)) throw new Error('straitjacket:audit — required arg `auditScope` is missing or empty')
 if (!Array.isArray(lenses) || !lenses.length) throw new Error('straitjacket:audit — required arg `lenses` must be a non-empty array')
 

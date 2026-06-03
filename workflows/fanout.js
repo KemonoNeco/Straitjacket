@@ -21,7 +21,29 @@ export const meta = {
   ],
 }
 
-const { tasks = [], cap = 6 } = args
+// Normalize + validate `args` before consuming it (issues #54 + #58). The Workflow runtime can deliver
+// `args` as a JSON STRING of a valid object; parse-and-adopt it when it is a plain object, else keep the
+// original, then run the plain-object guard BEFORE the destructure (null/undefined yields the actionable
+// message, not a raw TypeError — #58). Genuine non-object / CLI-string still fails loudly — NARROWS #36,
+// does not remove it. Routed through a local `cfg`, NOT a reassignment of the injected `args` global.
+let cfg = args
+let _argParseErr = ''   // when args is a string that doesn't yield a plain object, carry the reason into the guard message
+if (typeof cfg === 'string') {
+  try {
+    const _p = JSON.parse(cfg)
+    if (_p && typeof _p === 'object' && !Array.isArray(_p)) {
+      cfg = _p
+    } else {
+      _argParseErr = ` (parsed as ${_p === null ? 'null' : (Array.isArray(_p) ? 'Array' : typeof _p)} but expected a plain object)`
+    }
+  } catch (e) {
+    _argParseErr = ` (looks like a string but is not parseable JSON: ${e && e.message})`
+  }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+  throw new Error(`straitjacket:fanout — args must be a plain object, got ${cfg === null ? 'null' : (Array.isArray(cfg) ? 'Array' : typeof cfg)}${_argParseErr}; pass { tasks: [...], cap } not a CLI string`)
+}
+const { tasks = [], cap = 6 } = cfg
 // cap is clamped to a positive integer so a 0 / negative / NaN / stringified cap can't spin
 // forever (i += 0) or silently process nothing (NaN < length === false) — same class of hazard
 // as tdd-cycle.js's chunk() size (issue #31).
@@ -42,9 +64,7 @@ const CHUNK_RESULT_SCHEMA = {
   },
 }
 
-if (!args || typeof args !== 'object' || Array.isArray(args)) {
-  throw new Error(`straitjacket:fanout — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { tasks: [...], cap } not a CLI string`)
-}
+// (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
 
 phase('Fanout')
 let chunkResults = []

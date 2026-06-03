@@ -46,6 +46,31 @@ export const meta = {
   ],
 }
 
+// Normalize + validate `args` before consuming it (issues #54 + #58). The Workflow runtime can deliver
+// `args` as a JSON STRING of a valid object (recurring gotcha — see the literal-binding workaround); the
+// #36 plain-object guard would then hard-reject it and the stage runs 0 agents. Parse a string `args` and
+// ADOPT it only when it is a plain object; otherwise keep the original. Then run the guard BEFORE the
+// destructure (so a null/undefined `args` yields this actionable message, not a raw TypeError from
+// destructuring null — issue #58) and before any cfg.X read below. A genuine non-object / CLI-string still
+// fails loudly — this NARROWS #36, it does not remove it. Routed through a local `cfg`, NOT a reassignment
+// of the injected `args` global (whose mutability is runtime-dependent).
+let cfg = args
+let _argParseErr = ''   // when args is a string that doesn't yield a plain object, carry the reason into the guard message
+if (typeof cfg === 'string') {
+  try {
+    const _p = JSON.parse(cfg)
+    if (_p && typeof _p === 'object' && !Array.isArray(_p)) {
+      cfg = _p
+    } else {
+      _argParseErr = ` (parsed as ${_p === null ? 'null' : (Array.isArray(_p) ? 'Array' : typeof _p)} but expected a plain object)`
+    }
+  } catch (e) {
+    _argParseErr = ` (looks like a string but is not parseable JSON: ${e && e.message})`
+  }
+}
+if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
+  throw new Error(`straitjacket:tdd-cycle — args must be a plain object, got ${cfg === null ? 'null' : (Array.isArray(cfg) ? 'Array' : typeof cfg)}${_argParseErr}; pass { spec, stack, repoRoot, ... } not a CLI string`)
+}
 const {
   spec,
   mode = 'spec',          // 'spec' (greenfield) | 'target' (fix mode, seeded from a bug-ledger record)
@@ -59,7 +84,7 @@ const {
   testSnapshotPath,
   toolingAvailable = [],
   quick = false,
-} = args
+} = cfg
 
 // Sanitize the numeric caps — do NOT destructure-default them (Gemini review on PR #50). A destructure
 // default only fills `undefined`, so a null / 0 / negative / non-numeric `maxRounds` flows straight into
@@ -69,9 +94,9 @@ const {
 // each at a positive integer. Mirrors audit.js's `skeptics` sanitization and the chunk() clamp (issue
 // #31); authorCap/implCap are additionally clamped inside chunk(), but sanitizing at the source closes
 // the maxRounds fail-open and keeps the contract honest.
-const maxRounds = Math.max(1, parseInt(args.maxRounds, 10) || 3)
-const authorCap = Math.max(1, parseInt(args.authorCap, 10) || 6)
-const implCap = Math.max(1, parseInt(args.implCap, 10) || 4)
+const maxRounds = Math.max(1, parseInt(cfg.maxRounds, 10) || 3)
+const authorCap = Math.max(1, parseInt(cfg.authorCap, 10) || 6)
+const implCap = Math.max(1, parseInt(cfg.implCap, 10) || 4)
 
 // ---- schemas (mirror the agent output contracts) -------------------------------------
 
@@ -303,9 +328,7 @@ function bail(error) {
   }
 }
 
-if (!args || typeof args !== 'object' || Array.isArray(args)) {
-  throw new Error(`straitjacket:tdd-cycle — args must be a plain object, got ${args === null ? 'null' : (Array.isArray(args) ? 'Array' : typeof args)}; pass { spec, stack, repoRoot, ... } not a CLI string`)
-}
+// (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
 if (!spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
 
 // ---- the cycle -----------------------------------------------------------------------
