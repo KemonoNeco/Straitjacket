@@ -44,7 +44,7 @@ pass `model:` - each agent's frontmatter locks its tier and tool list. Tool rest
 | `mutation-runner` | haiku | - | Read, Bash, PowerShell | Mechanical: runs cargo-mutants / dotnet-stryker on a target → surviving mutants. |
 | `fuzz-harness-author` | opus | xhigh | Read, Grep, Glob, Write, Edit, Bash, PowerShell | Writes libFuzzer / SharpFuzz harnesses → runner tasks. Single. |
 | `fuzz-runner` | haiku | - | Read, Glob, Bash, PowerShell | Mechanical: runs one harness for a time budget → crash artifacts. |
-| `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Replaces `unimplemented!()` / `NotImplementedException` stubs (tdd green) **or** fixes buggy source (fix mode). **Never modifies tests.** |
+| `implementation-author` | opus | xhigh | Read, Grep, Glob, Write, Edit | Replaces `unimplemented!()` / `NotImplementedException` stubs (tdd green) **or** fixes buggy source (fix mode) **or** performs behavior-preserving simplifications under a green suite (`mode:refactor`, the post-green hardening loop). **Never modifies tests.** |
 | `gate-runner` | haiku | - | Read, Glob, Bash, PowerShell, Write | Mechanical: materializes work-units.json and runs one straitjacket CLI gate (run-new-tests / verify-*); the in-workflow sequential single-writer for `tdd-cycle`. |
 | `audit-<lens>` (×7) | opus (critical) / sonnet (cosmetic) | high | Read, Grep, Glob | Isolated source-audit finders, one per lens. **Opus**: latent-bug, security, concurrency, error-handling (correctness/safety). **Sonnet**: dead-code, doc-drift, performance (non-critical — cost-optimized). **No Bash.** Emit findings per `schemas/audit-finding.schema.json` (`lens` field is un-prefixed). |
 | `audit-runner` | haiku | - | Read, Bash, PowerShell, Glob | Mechanical: runs one `straitjacket audit-run --tool …` and returns its normalized findings. |
@@ -93,13 +93,22 @@ Three isolated specialists fan out in parallel → `adversarial-synthesis` dedup
 - **args:** `{workUnits, stack, mode, toolingAvailable, repoRoot}`. `mode`: `pre_impl` (emit test additions/strengthenings while RED, no mutation), `post_green` (emit `mutation_runner_tasks` + run the team), `lock` (characterization - dormant).
 - **returns:** `{stage, mode, synthesis, specialist_reports, mutation_results}`.
 - **The diff is never an arg** - specialists Read source + tests themselves.
+- **`post_green` mode is no longer consumed by `tdd`.** Since the post-green pivot, `tdd-cycle`
+  inlines only the *pre_impl* pass and drives post-green mutation mechanically (the test-validity
+  re-grade was redundant against locked tests). The `post_green` mode itself **survives** for the
+  standalone `adversarial-validation` usage and audit Phase 4a — do not delete it.
 
 ### `tdd-cycle`
 
 The consolidated test-first cycle as ONE resumable workflow (Phase 1): coverage → author →
-red-check → pre-impl adversarial → implement → green-check → post-green adversarial + mutation,
-iterating to a cap. Gates run via the `gate-runner` agent and the script branches on the verdict.
-Inlines the `fanout` + 3-specialist→synthesis choreography (scripts can't import one another).
+red-check → pre-impl adversarial → implement → green-check → **post-green mutation** (mechanical
+per-file targets). Gates run via the `gate-runner` agent and the script branches on the verdict.
+Inlines the `fanout` + 3-specialist→synthesis choreography for the *pre-impl* pass (scripts can't
+import one another). **Post-green no longer re-runs the test-validity specialists** — the tests are
+locked read-only after pre-impl, so re-grading them was redundant; mutation testing is the empirical
+ground truth for the same property. The workflow makes a single red→green→mutation savepoint pass;
+**iteration is session-owned** — the `tdd` skill runs the *post-green hardening loop* (see below)
+because it owns the savepoint/git that a revert-on-not-green refactor needs.
 
 - **args:** `{spec, mode, targetFile, targetSymbol, intendedBehaviorSeed, stack, repoRoot, outputDir, workUnitsPath, testSnapshotPath, toolingAvailable, maxRounds, quick, authorCap, implCap}`. `mode` is `spec` (greenfield, default) or `target` (fix mode); in `target` mode the Coverage phase runs `coverage-reviewer` in TARGET mode, mapping `targetFile`/`targetSymbol` and passing `intendedBehaviorSeed` **verbatim** as the locked contract (the triage fix-mode seam #1 — see Fix mode below). Spec mode is unchanged when no `mode`/target is supplied.
 - **returns:** `{rounds_run, locked_contracts, surfaced_bugs, surviving_mutants, no_mutation_audit, ready_to_commit, error}`. No interactive contract-review — contracts are surfaced non-blocking. `no_mutation_audit` is `{skipped:true}` when no `testSnapshotPath` was supplied (the gate needs a snapshot); when it ran, a not-clean verdict forces `ready_to_commit:false`.
@@ -113,6 +122,36 @@ mechanical + corroborated findings bypass it.
 
 - **args:** `{auditScope, stack, lenses, mechanicalTools, repoRoot, skeptics}`. **Never a diff** - lenses Read the scope themselves.
 - **returns:** `{confirmed_findings, refuted_findings, uncertain_findings, mechanical_findings, lens_coverage, refutation_summary, synthesis_status}`.
+
+## Post-green hardening loop (session-owned; `tdd` / `triage` fix-mode)
+
+This is **not a workflow stage** — it is a **main-session arc** that composes the `audit` stage,
+fix-mode `tdd-cycle`, and `implementation-author` (refactor mode) into the red-green-**refactor** step
+that the post-green test-validity re-grade used to occupy. It lives in the session because it owns the
+**savepoint/git** (substrate classifier: *needs a gate / owns state → main session*): it commits each
+accepted improvement and **reverts** a green-breaking refactor, which the Workflow runtime cannot.
+
+After `tdd-cycle` returns green and the baseline savepoint is committed, the skill loops to a cap
+(`--max-harden-rounds`, default 2):
+
+1. **Audit the finished implementation** — run the `audit` stage over the impl files (the
+   `locked_contracts` `target_file`s), full lens set + available mechanical tools, refute spine on.
+   Action only `confirmed_findings`.
+2. **Route by class:**
+   - **Behavior gap** (lenses latent-bug / error-handling / security / concurrency; disposition
+     `bug_record` / `work_unit_proposal`) **+ surviving mutants** → **back to the start of TDD**:
+     fix-mode `tdd-cycle` (`mode:target`, bridge fields mapped verbatim) writes a RED test for the
+     **correct** behavior, then a fix, then green → commit. Never hand-patch (Cardinal Rule 0).
+   - **Quality** (lenses dead-code / performance / doc-drift; disposition `report`) → **refactor under
+     green**: `implementation-author` `mode:refactor` → re-run the green gate + `verify-no-test-mutation`
+     → commit if still green & tests unmutated, else `git checkout` the impl files (revert) and surface
+     the rejected refactor.
+3. **Stop** at no-actionable-findings or the cap; unfixed behavior gaps/mutants → `report-bug` (+ the
+   capture gate); same-change fixes need no issue.
+
+This loop is also the standing satisfier of **Cardinal Rule 8** (TDD-unverifiable → audit) for a
+`tdd`/`triage` run's own output. The mechanical surviving-mutant feed and the green/no-mutation
+re-gates keep the savepoint discipline intact: every commit on the loop is a QA'd-green savepoint.
 
 ## Coverage modes - the `coverage-reviewer`'s three entry points
 

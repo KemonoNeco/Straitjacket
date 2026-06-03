@@ -26,14 +26,17 @@
 //   workUnitsPath       outputDir + "/work-units.json"
 //   testSnapshotPath    snapshot for the end-of-cycle no-mutation audit (optional)
 //   toolingAvailable    string[]  (e.g. ["cargo-mutants"])
-//   maxRounds           iteration cap (default 3)
+//   maxRounds           in-workflow iteration cap (default 3). Vestigial since the post-green pivot:
+//                       the loop now makes a single red→green→mutation pass (iteration is session-owned),
+//                       so maxRounds no longer drives multiple in-workflow rounds. Kept in the arg
+//                       contract; sanitized below so a degenerate value can never skip the one pass.
 //   quick               skip the post-green mutation team (default false)
 //   authorCap           parallel author cap (default 6)
 //   implCap             parallel implementation cap (default 4)
 
 export const meta = {
   name: 'tdd-cycle',
-  description: 'Consolidated test-first cycle: coverage planning → parallel test+stub authoring → red-check gate → pre-impl adversarial review → implementation → green-check gate → post-green adversarial + mutation, iterating to a cap. Gates run via the gate-runner agent and the script branches on their verdicts; no interactive contract-review (it is surfaced non-blocking instead). Returns locked contracts, surfaced bugs, and a ready_to_commit verdict for the main session to commit on green.',
+  description: 'Consolidated test-first cycle: coverage planning → parallel test+stub authoring → red-check gate → pre-impl adversarial review → implementation → green-check gate → post-green mutation team (mechanical targets). One honest red→green→mutation savepoint pass; gates run via the gate-runner agent and the script branches on their verdicts; no interactive contract-review (it is surfaced non-blocking instead). Returns locked contracts, surfaced bugs, surviving mutants, and a ready_to_commit verdict — the main session owns the post-green hardening loop (source-audit → fix-mode iterate for behavior gaps, refactor-under-green for quality) and commits on green.',
   phases: [
     { title: 'Coverage', detail: 'coverage-reviewer (single) locks intended_behavior from the spec' },
     { title: 'Author', detail: 'parallel test+stub authoring (compiles, fails at runtime)' },
@@ -41,7 +44,7 @@ export const meta = {
     { title: 'PreAdversarial', detail: '3 specialists → synthesis on the RED tests; surface strengthenings (unapplied)' },
     { title: 'Implement', detail: 'implementation-author fills stubs; never touches tests' },
     { title: 'GreenCheck', detail: 'gate-runner run-new-tests --expect pass + name-survival' },
-    { title: 'PostGreen', detail: 'post-green adversarial + (unless quick) mutation team' },
+    { title: 'PostGreen', detail: '(unless quick) mutation team over mechanical per-file targets — no test-validity re-review' },
     { title: 'Finalize', detail: 'no-test-mutation audit; assemble result' },
   ],
 }
@@ -256,9 +259,9 @@ function implPrompt(units) {
   ].join('\n')
 }
 
-function specialistPrompt(dim, units, mode) {
+function specialistPrompt(dim, units) {
   return [
-    `mode: ${mode}; stack: ${stack}`,
+    `mode: pre_impl; stack: ${stack}`,
     `You are the adversarial-${dim} specialist. Operate in isolation.`,
     `Work units (locked intended_behavior + paths):`, JSON.stringify(units, null, 2),
     `READ the current source at each target_file and the test at each output_file_path YOURSELF.`,
@@ -267,26 +270,27 @@ function specialistPrompt(dim, units, mode) {
   ].join('\n')
 }
 
-// Run the 3-specialist → synthesis adversarial pass inline (mode: pre_impl | post_green).
+// Run the 3-specialist → synthesis adversarial pass inline. PRE-IMPL ONLY since the post-green pivot:
+// the post_green call site was removed (post-green no longer re-grades the locked tests), so this
+// helper hardcodes the pre_impl path — the post_green mode branches were dead and are pruned. The
+// standalone adversarial.js stage still carries post_green for its other consumers.
 const ADVERSARIAL_SPECIALISTS = 3
-async function adversarial(units, mode) {
+async function adversarial(units) {
   const reports = (await parallel([
-    () => agent(specialistPrompt('vacuousness', units, mode), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'vacuousness' }),
-    () => agent(specialistPrompt('happy-path', units, mode), { agentType: 'straitjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'happy-path' }),
-    () => agent(specialistPrompt('misalignment', units, mode), { agentType: 'straitjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'misalignment' }),
+    () => agent(specialistPrompt('vacuousness', units), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: 'PreAdversarial', label: 'vacuousness' }),
+    () => agent(specialistPrompt('happy-path', units), { agentType: 'straitjacket:adversarial-happy-path', schema: SPECIALIST_SCHEMA, phase: 'PreAdversarial', label: 'happy-path' }),
+    () => agent(specialistPrompt('misalignment', units), { agentType: 'straitjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: 'PreAdversarial', label: 'misalignment' }),
   ])).filter(Boolean)
 
   const synthesis = await agent([
-    `mode: ${mode}; stack: ${stack}`,
+    `mode: pre_impl; stack: ${stack}`,
     `Synthesize these three adversarial specialist reports — dedupe, rank by severity. Do NOT re-read source.`,
     `tooling_available: ${JSON.stringify(toolingAvailable)}`,
     `work_units_locked: ${JSON.stringify(units)}`,
     `specialist_reports: ${JSON.stringify(reports)}`,
-    mode === 'post_green'
-      ? `POST-GREEN: emit mutation_runner_tasks for the surviving-mutant hunt + any new_work_unit_proposals.`
-      : `PRE-implementation (no impl exists yet): emit ranked test additions/strengthenings as new_work_unit_proposals; leave mutation_runner_tasks empty.`,
+    `PRE-implementation (no impl exists yet): emit ranked test additions/strengthenings as new_work_unit_proposals; leave mutation_runner_tasks empty.`,
     `Return ONLY JSON matching the adversarial-synthesis output contract.`,
-  ].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: mode === 'pre_impl' ? 'PreAdversarial' : 'PostGreen', label: 'synthesis' })
+  ].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: 'PreAdversarial', label: 'synthesis' })
 
   // specialistsRun lets the caller detect a DROPPED specialist (issue #37): a null specialist return
   // is filtered out above, silently shrinking the review from 3 lenses to fewer. The caller records
@@ -402,7 +406,10 @@ const droppedImpl = []               // issue #47: units an implementation-autho
 let mutationRunnersFailed = 0        // issue #37: dropped mutation-runner agents — NON-gating (mutation is advisory
                                      // + --quick-skippable); counted/surfaced but never blocks ready_to_commit.
 // allUnitsById (issue #51/#52): the single source of truth for the CUMULATIVE authored-and-gated work
-// units across ALL rounds, keyed by id. The PASS-side gates (GreenCheck + its compile gate, name-survival,
+// units, keyed by id. NOTE: since the post-green pivot the loop makes a SINGLE pass (in-workflow
+// iteration was retired with the post_green synthesis that drove it — see PostGreen below), so today
+// allUnits == this round's units. The cumulative machinery is retained intact (correct and harmless as
+// identity in a single pass, and the only safe shape if a future change re-enables rounds). The PASS-side gates (GreenCheck + its compile gate, name-survival,
 // the notPassing scan, the Finalize no-mutation audit), readyToCommit, AND the returned locked_contracts all
 // derive from this — so a later round's implementation regressing an EARLIER round's previously-green test is
 // re-run and caught (the false green #51 fixed). The RED side stays on `units` (this round's NEW units only):
@@ -497,7 +504,7 @@ while (round < maxRounds && units.length) {
   }
 
   phase('PreAdversarial')
-  const pre = await adversarial(units, 'pre_impl')
+  const pre = await adversarial(units)
   // Record an INCOMPLETE pre-impl review as degraded (issue #37): a dropped specialist or a null
   // synthesis means fewer than 3 adversarial lenses actually ran. The tests are red-confirmed and will
   // be green-gated regardless, so this is NOT false-green-capable (not lastError) — but a review that
@@ -576,26 +583,38 @@ while (round < maxRounds && units.length) {
   }
 
   phase('PostGreen')
-  const post = await adversarial(units, 'post_green')
-  // A failed post-green review must not read as "clean" (issue #37): a dropped specialist or a null
-  // synthesis means the post-green adversarial pass ran incomplete. Green is REAL (every unit passed
-  // the green gate above), so this is degraded, not lastError — but it blocks a clean ready_to_commit.
-  if (post.specialistsRun < post.specialistsExpected) degraded.push(`post-green adversarial review incomplete: only ${post.specialistsRun}/${post.specialistsExpected} specialists returned`)
-  if (!post.synthesis) degraded.push('post-green adversarial synthesis returned nothing — cannot confirm the post-green review found no further weaknesses')
+  // Post-green NO LONGER re-runs the three test-validity specialists (vacuousness / happy-path /
+  // misalignment). The tests LOCKED read-only at PreAdversarial, so those lenses — properties of the
+  // frozen test text + the locked contract — would re-grade UNCHANGED tests, redundant with the
+  // pre-impl pass. Mutation testing is the EMPIRICAL ground truth for what they heuristically guess at
+  // (a vacuous / edge-thin test does not kill mutants), so post-green drives mutation MECHANICALLY and
+  // the SESSION owns the source-audit + refactor/fix-mode hardening loop that follows green. The
+  // session owns the savepoint/git, so it can commit each accepted improvement or REVERT a
+  // green-breaking refactor — which the Workflow runtime cannot. See docs/STAGES.md "Post-green
+  // hardening loop" + the decomposition plan. (The adversarial() helper stays — PreAdversarial still
+  // calls it; only the post_green call site is removed.)
   let roundMutants = []
-  const tasks = (post.synthesis && post.synthesis.mutation_runner_tasks) || []
+  // Mechanical mutation targets (was: post-green synthesis' mutation_runner_tasks, which are derivable
+  // without the test-validity fan-out): one file-scoped task per DISTINCT source file the run actually
+  // wrote new implementation into, across the cumulative green units. Union BOTH target_stub_path and
+  // target_file: in spec/greenfield mode the implementation-author fills the stub at target_stub_path
+  // (which the schema lets differ from target_file), while fix/target mode writes target_file. Reading
+  // target_file ALONE would mutate the wrong file whenever the two diverge — the freshly-written code
+  // would escape the surviving-mutant hunt and an empty mutant set would read as a false 'clean' on the
+  // primary tdd path. Units with neither path contribute nothing.
+  const mutationTargets = [...new Set(allUnits.flatMap((u) => [u.target_stub_path, u.target_file]).filter(Boolean))]
   const canMutate = !quick && (toolingAvailable.includes('cargo-mutants') || toolingAvailable.includes('dotnet-stryker') || toolingAvailable.includes('stryker'))
-  if (canMutate && tasks.length) {
-    for (const wave of chunk(tasks, 3)) {
-      const r = await parallel(wave.map((t) => () =>
+  if (canMutate && mutationTargets.length) {
+    for (const wave of chunk(mutationTargets, 3)) {
+      const r = await parallel(wave.map((target) => () =>
         agent([
-          `Run mutation testing for ${t.target_path || t.target_file} (scope: ${t.scope || 'file'}, stack: ${stack}).`,
+          `Run mutation testing for ${target} (scope: file, stack: ${stack}).`,
           `repo_root: ${repoRoot}`, `Return surviving mutants as JSON.`,
-        ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'PostGreen', label: `mutation:${t.target_path || t.target_file}` })))
+        ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'PostGreen', label: `mutation:${target}` })))
       // A dropped mutation-runner (null after retries) undercounts surviving mutants. This is
       // explicitly NON-gating (issue #37): mutation is advisory + --quick-skippable, so a failed runner
-      // is COUNTED and surfaced but never blocks ready_to_commit (unlike the adversarial review above) —
-      // folding a non-gating concern into the commit gate would be its own no-silent-green inversion.
+      // is COUNTED and surfaced but never blocks ready_to_commit — folding a non-gating concern into the
+      // commit gate would be its own no-silent-green inversion.
       const returned = r.filter(Boolean)
       mutationRunnersFailed += wave.length - returned.length
       roundMutants = roundMutants.concat(returned.flatMap((m) => m.surviving_mutants || []))
@@ -603,68 +622,14 @@ while (round < maxRounds && units.length) {
   }
   survivingMutants.push(...roundMutants)
 
-  // ---- iterate decision (in-script) ----
-  const unresolved = ((post.synthesis && post.synthesis.static_findings) || []).filter((f) => f && (f.severity === 'high' || f.severity === 'medium'))
-  const proposals = (post.synthesis && post.synthesis.new_work_unit_proposals) || []
-  // Another GATED round runs ONLY if one is wanted AND a round remains in the cap (issue #45). On the
-  // final allowed round (round === maxRounds) the old code still hit `units = materialized; continue`,
-  // but the loop guard `round < maxRounds` was then false, so it EXITED without ever authoring/gating
-  // the materialized units — and the unresolved findings that wanted the round lived only in the
-  // loop-local `unresolved` (recorded in no gating variable), so readyToCommit could read true over open
-  // findings. Gate the iterate on a remaining round; the cap-exhausted AND the no-proposals cases fall
-  // through to the unresolved-findings guard below so neither silently drops open findings.
-  const wantsAnotherRound = !!((roundMutants.length || unresolved.length) && proposals.length)
-  if (wantsAnotherRound && round < maxRounds) {
-    // Materialize each synthesis proposal into a SCHEMA-COMPLETE WorkUnit before the next round
-    // (issue #19): a proposal carries only target_file/target_symbol/kind/intended_behavior, but the
-    // gates collect ONLY status=='written' units and reconcile by id — so feeding raw proposals
-    // (no id, no output_file_path, no status) made round 2+ collect nothing and break. This mirrors
-    // the round-1 materialization coverage-reviewer output receives; FAIL LOUDLY rather than feed a
-    // partial proposal forward (the fix-mode seed permits a loud fail over a silent mis-run).
-    const materialized = []
-    for (let i = 0; i < proposals.length; i += 1) {
-      const p = proposals[i] || {}
-      if (!p.target_file || !p.intended_behavior || String(p.intended_behavior).length < 10) {
-        lastError = `iterate: synthesis proposal #${i} lacks a usable target_file/intended_behavior — refusing to feed a partial proposal into round ${round + 1}`
-        break
-      }
-      materialized.push({
-        id: `r${round + 1}-p${i}`,
-        target_file: p.target_file,
-        target_symbol: p.target_symbol || p.target_file,
-        kind: p.kind === 'integration' ? 'integration' : 'unit',
-        intended_behavior: p.intended_behavior,
-        preconditions: p.preconditions || '',
-        inputs: p.inputs || '',
-        expected: p.expected || '',
-        fuzzable: !!p.fuzzable,
-        output_file_path: p.output_file_path || p.target_stub_path || p.target_file,
-        output_test_name: p.output_test_name || `test_r${round + 1}_p${i}`,
-        target_stub_path: p.target_stub_path || p.target_file,
-        status: 'pending',
-        round: round + 1,
-        source_of_unit: 'adversarial_reviewer',
-      })
-    }
-    if (lastError) break
-    // Next round covers the under-tested behavior class the synthesis proposed (never the mutant itself).
-    units = materialized
-    continue
-  }
-  // Not iterating further this run (issue #45): either the maxRounds cap is exhausted, or there are no
-  // materializable proposals to carry findings forward. If unresolved high/medium findings remain they
-  // were the reason another round was wanted and will now NEVER be re-authored/re-gated — record them as
-  // a blocking degraded reason so ready_to_commit fails closed instead of reporting commit-ready over
-  // open findings. (degraded, not lastError: the green that ran IS real; this is the "a quality concern
-  // is unresolved at the cap" tier. Surviving mutants alone do NOT block — mutation is advisory/non-gating
-  // per #37 and is already surfaced in the return — so this gates only on unresolved static findings.)
-  if (unresolved.length) {
-    const why = !proposals.length
-      ? 'no materializable proposals to carry them forward'
-      : `the maxRounds cap (${maxRounds}) is exhausted`
-    const titles = unresolved.map((f) => f.title || f.summary || '(untitled finding)').slice(0, 8).join('; ')
-    degraded.push(`post-green left ${unresolved.length} unresolved high/medium finding(s) that will not be re-authored/re-gated — ${why}: ${titles}${unresolved.length > 8 ? ' …' : ''}`)
-  }
+  // The in-workflow iterate loop is retired together with the post-green synthesis that drove it
+  // (proposals + unresolved findings were both sourced from the now-removed post_green adversarial
+  // pass). Hardening — surviving mutants + source-audit findings → fix-mode tdd-cycle for behavior
+  // gaps, refactor-under-green for quality — is now SESSION-owned, because it needs the savepoint/git
+  // to commit each accepted improvement or revert a green-breaking refactor. This cycle therefore makes
+  // ONE honest red → green → mutation savepoint pass and returns; surviving_mutants ride out in the
+  // result for the session to lift. (The cumulative-allUnits machinery + every fail-closed gate stay
+  // intact, defensively; in a single pass allUnits == units.)
   break
 }
 
