@@ -198,12 +198,15 @@ const coverageComplete = !failedLenses.length && !failedMechanicalTools.length
 // schema-valid result with nothing_scanned:true — every audit-<lens> contract emits that when its
 // audit_scope resolved to zero readable source files. Such a lens has failed:false, so coverageComplete
 // stays true and a clean 'ok' would ride out over an audit that examined NOTHING. anythingScanned is true
-// only if at least one lens OR mechanical tool actually scanned something (neither failed nor
-// nothing_scanned); when false, the terminal status is forced to 'degraded' regardless of what synthesis
-// reported. This is the OUTPUT-side fail-closed the input-side args guards (#36) cannot provide.
+// only if at least one lens OR mechanical tool AFFIRMATIVELY scanned something (failed === false AND
+// nothing_scanned === false); when false, the terminal status is forced to 'degraded' regardless of what
+// synthesis reported. This is the OUTPUT-side fail-closed the input-side args guards (#36) cannot provide.
+// Affirmative `=== false` (not `!c.failed`) per the repo's fail-closed rule (Gemini review on PR #64):
+// a malformed coverage entry missing these flags must NOT count as "scanned" (an undefined flag under
+// `!c.failed` would fail OPEN); requiring an explicit false keeps a degenerate entry from masking a no-scan.
 const anythingScanned =
-  lensCoverage.some((c) => !c.failed && !c.nothing_scanned) ||
-  mechanicalCoverage.some((c) => !c.failed && !c.nothing_scanned)
+  lensCoverage.some((c) => c.failed === false && c.nothing_scanned === false) ||
+  mechanicalCoverage.some((c) => c.failed === false && c.nothing_scanned === false)
 // Refuter-coverage floor (issue #49 — "specialists dispatched-and-returned"). A null (dead) refuter is
 // dropped by `votes.filter(Boolean)`, but unlike a failed lens/tool it is recorded in NO coverage ledger
 // and the strict-majority quorum counts it as not-survive — so a TRUE finding whose skeptics died is
