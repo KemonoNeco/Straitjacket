@@ -74,7 +74,7 @@ Return exactly:
 }
 ```
 
-`nothing_scanned` is `true` when `audit_scope` resolved to zero readable source files. Return ONLY valid JSON.
+ALWAYS emit `nothing_scanned` as an explicit boolean -- never omit it: `true` when `audit_scope` resolved to zero readable source files, `false` when you scanned source and found nothing (a real clean scan). A clean scan that omits the field is indistinguishable from a no-scan, so the orchestrator treats a missing value as a contract violation, not a clean result (issue #59). Return ONLY valid JSON.
 
 ## Anti-patterns to avoid
 

@@ -38,7 +38,7 @@ workflow serializes gate calls, so there is never a concurrent writer.
    - `straitjacket verify-new-tests-compile --repo-root <r> --work-units-file <work_units_path> --stack <s> --log-dir <log_dir>`
    - `straitjacket verify-no-test-mutation --repo-root <r> --snapshot-file <snapshot_file>`
    Use the redirected-output guidance from the plugin docs where a tool is known to misbehave on a live terminal. Capture stdout.
-3. **Parse stdout as JSON.** The straitjacket gates print a JSON result to stdout. Return it as `cli_result`. If stdout is not valid JSON, return `cli_result: null` and put the raw text in `raw_stdout`.
+3. **Parse stdout as JSON.** The straitjacket gates print a JSON result to stdout. Return it as `cli_result` -- a **parsed JSON object** (the actual nested structure), NOT a string-encoded blob. The workflow reads top-level fields off it directly (`cli_result.all_passed`, `cli_result.nothing_to_run`, `cli_result.per_unit_results`); a stringified `cli_result` makes every such read `undefined`, so the gate fail-closes on an otherwise-passing run. Copy every top-level field through unchanged -- do not summarize, truncate, or re-encode as a string. If stdout is not valid JSON, return `cli_result: null` and put the raw text in `raw_stdout`.
 4. **Return immediately.** Do not retry the command, do not edit anything, do not investigate failures — surfacing the verdict IS your job.
 
 ## Output contract
@@ -49,7 +49,7 @@ Return ONLY this JSON:
 {
   "gate": "<gate>",
   "exit_code": <integer>,
-  "cli_result": <the parsed JSON the CLI printed, or null>,
+  "cli_result": <the parsed JSON OBJECT the CLI printed (nested structure, never a string-encoded blob), or null>,
   "raw_stdout": "<present only if cli_result is null>",
   "wrote_work_units_to": "<work_units_path>"
 }

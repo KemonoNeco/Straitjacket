@@ -42,7 +42,7 @@ Return the `straitjacket audit-run` JSON unchanged. Its shape is:
 }
 ```
 
-`available: false` means the tool is not installed (findings will be empty — expected, not a failure). `nothing_scanned: true` means the tool ran but had no source to inspect. Return ONLY the binary's JSON (or `{"raw_stdout": "...", "note": "..."}` if it did not emit JSON).
+`available: false` means the tool is not installed (findings will be empty — expected, not a failure). ALWAYS relay `nothing_scanned` exactly as the binary emitted it -- an explicit boolean, never omitted (`true` = the tool ran but had no source to inspect; `false` = it scanned and found nothing). A missing value is a contract violation: the orchestrator can no longer tell ran-clean from didn't-run and must treat the relay as failed coverage (issue #59). Return ONLY the binary's JSON (or `{"raw_stdout": "...", "note": "..."}` if it did not emit JSON).
 
 ## Anti-patterns to avoid
 

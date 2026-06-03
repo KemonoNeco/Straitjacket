@@ -68,6 +68,29 @@ the session regains control between them.
   Parse the structured result and merge into `work-units.json` (you stay the single writer).
 - **Absent** → dispatch the same agents directly via `Agent`, all parallel spawns in one message.
 
+**Workflow-present is workflow-mandatory.** When the capability check finds `Workflow`, the
+workflow path is **not** discretionary - the Agent-dispatch path is the fallback for a *genuinely
+absent* `Workflow` tool, not an alternative you may pick on convenience grounds. A
+`Workflow`-present run that hand-rolls the stages via direct `Agent` dispatch is a process
+violation, not a judgment call. Do **not** rationalize the fallback on grounds that are
+addressable *inside* the workflow:
+
+- *"It's a single work unit / a small one-line fix"* - the workflow runs N=1 fine; its "overhead"
+  IS the red/green gate branching + name-survival + the 3-specialist→synthesis adversarial validity
+  checks you would otherwise have to hand-run *consistently*. Small scope is not a skip reason - it
+  is precisely when hand-rolling quietly drops the adversarial stack.
+- *"The stringified-`args` gotcha"* - the stage scripts already parse a string `args` back into an
+  object (issues #54 / #58); pass `args` as a real JSON object (or via `scriptPath`) and it works.
+  This gotcha is fixed and is **not** a reason to hand-roll.
+- *"Hand-orchestrating gives me more control"* - it also puts the gate branching, the iterate seam,
+  and the adversarial→synthesis fan-out on *you* to re-implement turn-by-turn, which is the
+  multi-agent-collapse failure mode the engine exists to remove. Control here means *less* rigor,
+  not more.
+
+The single valid trigger for the Agent path is the capability check returning **absent**. If you
+find yourself building a case for the fallback while `Workflow` is present, that is the smell -
+stop and run the workflow.
+
 Either way the agents, prompts, schemas, and per-team caps are identical - the workflow only
 changes the dispatch substrate. **The diff is never a workflow binding**; isolated specialists
 Read the post-change source themselves. Their `tools:` restriction holds for workflow-spawned
