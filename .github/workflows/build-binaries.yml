@@ -19,6 +19,13 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/build-binaries.yml"
+      # workflows/** and bin/** are load-bearing for the embed-freshness gate (issue #49): the
+      # Windows Test step runs `committed_binary_embeds_current_workflow_scripts`, which fails when
+      # the committed bin/straitjacket-* does not embed the current workflows/*.js. A PR that edits a
+      # workflow script but forgets to rebuild + re-commit the binary touches neither src/ nor Cargo.*,
+      # so without these paths the workflow would not trigger and the staleness would ship unchecked.
+      - "workflows/**"
+      - "bin/**"
   push:
     tags: ["v*"]
 

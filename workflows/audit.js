@@ -137,6 +137,7 @@ for (const wave of chunk(lenses, 6)) {
 // ---- Refute: skeptics vote over the FULL llm-finding set; mechanical findings bypass ----
 phase('Refute')
 let refuterVotes = []
+let refutersDispatched = 0   // skeptics actually dispatched this run (0 when there were no LLM findings to refute)
 if (llmFindings.length) {
   // Each refuter sees claim + evidence + source only (no finder reasoning), and the source itself.
   // Carry every finding field the audit-refuter contract (agents/audit-refuter.md "Inputs") enumerates
@@ -144,7 +145,8 @@ if (llmFindings.length) {
   // when-present expected/actual (issue #43). Omit the array index `ref`: the refuter is told below to
   // key votes by title (NOT the index) and synthesis joins by title, so `ref` was dead payload.
   const claimsOnly = llmFindings.map((f) => ({ lens: f.lens, severity: f.severity, title: f.title, summary: f.summary, expected: f.expected, actual: f.actual, suspect_files: f.suspect_files, suspect_symbol: f.suspect_symbol, file: f.file, line: f.line, evidence: f.evidence }))
-  const votes = await parallel(Array.from({ length: Math.min(skeptics, 3) }, (_unused, k) => () =>
+  refutersDispatched = Math.min(skeptics, 3)
+  const votes = await parallel(Array.from({ length: refutersDispatched }, (_unused, k) => () =>
     agent([
       `You are an audit-refuter (skeptic #${k + 1}). For EACH finding below, vote refute / survive / uncertain.`,
       `DEFAULT to refute when you cannot independently confirm the claim by reading the cited source — this audit drops the unconfirmable.`,
@@ -191,6 +193,26 @@ const synthesis = await agent([
 const failedLenses = lensCoverage.filter((c) => c.failed).map((c) => c.lens)
 const failedMechanicalTools = mechanicalCoverage.filter((c) => c.failed).map((c) => c.tool)
 const coverageComplete = !failedLenses.length && !failedMechanicalTools.length
+// Zero-scan floor (issue #49, mechanism 1) — one level up from #40's failed-lens floor. #40 forces
+// degraded when a DISPATCHED lens/tool returned null (failed:true). But a lens can also return a
+// schema-valid result with nothing_scanned:true — every audit-<lens> contract emits that when its
+// audit_scope resolved to zero readable source files. Such a lens has failed:false, so coverageComplete
+// stays true and a clean 'ok' would ride out over an audit that examined NOTHING. anythingScanned is true
+// only if at least one lens OR mechanical tool actually scanned something (neither failed nor
+// nothing_scanned); when false, the terminal status is forced to 'degraded' regardless of what synthesis
+// reported. This is the OUTPUT-side fail-closed the input-side args guards (#36) cannot provide.
+const anythingScanned =
+  lensCoverage.some((c) => !c.failed && !c.nothing_scanned) ||
+  mechanicalCoverage.some((c) => !c.failed && !c.nothing_scanned)
+// Refuter-coverage floor (issue #49 — "specialists dispatched-and-returned"). A null (dead) refuter is
+// dropped by `votes.filter(Boolean)`, but unlike a failed lens/tool it is recorded in NO coverage ledger
+// and the strict-majority quorum counts it as not-survive — so a TRUE finding whose skeptics died is
+// flipped survive->dropped on a non-quorum it never lost on the merits, and a clean 'ok' could still ride
+// out over that silently-incomplete refutation. Surface the shortfall and force 'degraded', mirroring the
+// lens/mechanical floors. (Only gates when refuters were actually dispatched — none are when there were no
+// LLM findings to refute, which is not an incomplete refutation.)
+const refutersReturned = refuterVotes.length
+const refuterCoverageComplete = refutersReturned >= refutersDispatched
 const rawSynthesisStatus = (synthesis && synthesis.synthesis_status) || 'degraded'
 
 return {
@@ -202,8 +224,13 @@ return {
   lens_coverage: lensCoverage,
   mechanical_coverage: mechanicalCoverage,
   coverage_complete: coverageComplete,
+  anything_scanned: anythingScanned,
   failed_lenses: failedLenses,
   failed_mechanical_tools: failedMechanicalTools,
-  refutation_summary: { skeptics: Math.min(skeptics, 3), llm_finding_count: llmFindings.length },
-  synthesis_status: coverageComplete ? rawSynthesisStatus : 'degraded',
+  refuter_coverage: { dispatched: refutersDispatched, returned: refutersReturned, complete: refuterCoverageComplete },
+  refutation_summary: { skeptics: Math.min(skeptics, 3), llm_finding_count: llmFindings.length, refuters_dispatched: refutersDispatched, refuters_returned: refutersReturned },
+  // A clean 'ok' requires a complete scan (no dispatched lens/tool failed), a non-empty scan (something was
+  // actually examined), AND complete refuter coverage (no dispatched skeptic died) — else degraded, so an
+  // incomplete scan OR an incomplete refutation can never ride out as clean (issue #40 + #49).
+  synthesis_status: (coverageComplete && anythingScanned && refuterCoverageComplete) ? rawSynthesisStatus : 'degraded',
 }
