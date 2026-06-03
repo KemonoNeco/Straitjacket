@@ -359,7 +359,6 @@ let units = (coverage && coverage.work_units) || []
 if (units.some((u) => !u || typeof u !== 'object')) {
   return bail('coverage-reviewer emitted a null or non-object work unit -- refusing to proceed on a malformed coverage plan')
 }
-const lockedContracts = units.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
 if (!units.length) {
   return bail('coverage-reviewer produced no work units')
 }
@@ -379,6 +378,19 @@ const droppedImpl = []               // issue #47: units an implementation-autho
                                      // (load-bearing for gate collection) nor blocks ready_to_commit.
 let mutationRunnersFailed = 0        // issue #37: dropped mutation-runner agents — NON-gating (mutation is advisory
                                      // + --quick-skippable); counted/surfaced but never blocks ready_to_commit.
+// allUnitsById (issue #51/#52): the single source of truth for the CUMULATIVE authored-and-gated work
+// units across ALL rounds, keyed by id. The PASS-side gates (GreenCheck + its compile gate, name-survival,
+// the notPassing scan, the Finalize no-mutation audit), readyToCommit, AND the returned locked_contracts all
+// derive from this — so a later round's implementation regressing an EARLIER round's previously-green test is
+// re-run and caught (the false green #51 fixed). The RED side stays on `units` (this round's NEW units only):
+// feeding an already-green prior-round unit into RedCheck (expect:fail) would PASS against no stub and trip
+// the vacuous-pre-impl guard. round-N ids (`r{N}-p{i}`) never collide with round-1, so a re-proposed unit is
+// updated in place rather than double-counted.
+const allUnitsById = new Map()
+// Dedup the GreenCheck notPassing scan across rounds (issue surfaced by the PR-1 rule-8 audit): the scan
+// now iterates the CUMULATIVE allUnits every round, so a persistently-regressed earlier-round unit would
+// be pushed to surfacedBugs once per subsequent round. Surface each non-passing work_unit_id at most once.
+const surfacedNotPassingIds = new Set()
 let round = 0
 let lastError = null
 
@@ -387,9 +399,10 @@ while (round < maxRounds && units.length) {
 
   // Every unit must be routable to an author team. The two fanout selectors below match
   // kind==='unit' / kind==='integration' with NO catch-all, so a unit with an absent or unrecognized
-  // kind would be selected by NEITHER team — never authored, never gated, left status:'pending' — yet
-  // still ride out in lockedContracts as a faithfully-enforced contract (issue #39). COVERAGE_SCHEMA
-  // does not constrain `kind` and coverage-reviewer is an LLM, so a missing/other kind is reachable.
+  // kind would be selected by NEITHER team — never authored, never gated, left status:'pending'
+  // (issue #39). COVERAGE_SCHEMA does not constrain `kind` and coverage-reviewer is an LLM, so a
+  // missing/other kind is reachable. (Since #51, lockedContracts derives from the post-gate
+  // accumulator, so such a unit no longer rides out as a contract — but it must still fail loudly here.)
   // Fail the round loudly here rather than silently drop the unit. (Iterate-materialize already
   // coerces kind to unit|integration, so in practice this guards round-1 coverage-reviewer output.)
   const badKind = units.filter((u) => u.kind !== 'unit' && u.kind !== 'integration')
@@ -424,6 +437,12 @@ while (round < maxRounds && units.length) {
     lastError = `author phase left unit(s) uncollectable (status != 'written', so run-new-tests would silently skip them while written siblings ride to a false green): ${uncollectable.map((u) => `${u.id}:${u.status || 'unset'}`).join(', ')} — an author agent likely returned null after its retry budget`
     break
   }
+  // Fold this round's authored-and-gated units into the cumulative set (issue #51/#52). Only units that
+  // passed the uncollectable gate above (all status:'written') reach here, so allUnitsById holds exactly
+  // the units that were genuinely authored. `allUnits` is the PASS-side gate set for THIS round; the RED
+  // gates below stay on `units` (this round's new units only).
+  for (const u of units) allUnitsById.set(u.id, u)
+  const allUnits = [...allUnitsById.values()]
 
   phase('RedCheck')
   // Bind + branch on the compile verdict BEFORE run-new-tests (issue #21): a non-compiling tree
@@ -486,9 +505,15 @@ while (round < maxRounds && units.length) {
   }
 
   phase('GreenCheck')
-  const greenCompileErr = compileFailure(await runGate('verify-new-tests-compile', units, { phaseName: 'GreenCheck' }), 'GreenCheck compile')
+  // GreenCheck + its compile gate run over the CUMULATIVE allUnits (issue #51), not just this round's new
+  // units, so a round-N implementation that regressed an earlier round's test is re-run and surfaces below
+  // (its classification goes non-all_pass → notPassing → surfacedBugs → blocks ready_to_commit). The Rust
+  // gate classifies ONLY the units it is handed (run_new_tests.rs), so the earlier-round test must be IN the
+  // handed set to be caught — that is precisely why the pass side carries allUnits while the red side carries
+  // `units`.
+  const greenCompileErr = compileFailure(await runGate('verify-new-tests-compile', allUnits, { phaseName: 'GreenCheck' }), 'GreenCheck compile')
   if (greenCompileErr) { lastError = greenCompileErr; break }
-  const green = await runGate('run-new-tests', units, { expect: 'pass', phaseName: 'GreenCheck' })
+  const green = await runGate('run-new-tests', allUnits, { expect: 'pass', phaseName: 'GreenCheck' })
   if (!green || green.nothing_to_run) {
     lastError = 'green-check checked nothing (nothing_to_run)'
     break
@@ -498,6 +523,10 @@ while (round < maxRounds && units.length) {
   // the old name compare was vacuous, `missing` always []). Every test that RAN at red must still
   // exist at green; one that is gone/non-executing (never_found) is a test-mutation cheat
   // (deleted/renamed/#[ignore]-d) and fails loudly.
+  // redRan is THIS round's new units (the red gate ran `units`); greenByUnit is the cumulative allUnits
+  // (the green gate ran allUnits). Survival therefore only asserts this round's tests still exist at green —
+  // a regression of an EARLIER round's test is not a survival concern (that test never ran at this round's
+  // red) but is caught by the notPassing scan below, which iterates the cumulative green per_unit_results.
   const greenByUnit = new Map((green.per_unit_results || []).filter(Boolean).map((u) => [u.work_unit_id, u]))
   const redRan = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification && u.classification !== 'never_found')
   const survivalViolations = redRan
@@ -511,7 +540,9 @@ while (round < maxRounds && units.length) {
   // surface EVERY non-all_pass classification (all_fail / flaky / never_found), not just all_fail.
   const notPassing = (green.per_unit_results || []).filter(Boolean).filter((u) => u.classification !== 'all_pass')
   for (const fu of notPassing) {
-    const wu = units.find((u) => u.id === fu.work_unit_id)
+    if (surfacedNotPassingIds.has(fu.work_unit_id)) continue  // already surfaced in an earlier round (cumulative scan)
+    surfacedNotPassingIds.add(fu.work_unit_id)
+    const wu = allUnitsById.get(fu.work_unit_id)  // cumulative set: a regressed EARLIER-round unit is not in this round's `units`
     surfacedBugs.push({
       work_unit_id: fu.work_unit_id,
       target_file: wu && wu.target_file,
@@ -615,16 +646,38 @@ while (round < maxRounds && units.length) {
 }
 
 phase('Finalize')
+// locked_contracts (issue #52) and the Finalize no-mutation audit both derive from the CUMULATIVE
+// authored-and-gated set, not the loop-local `units` (which on an iterated run holds only the LAST
+// round's new units). finalUnits is the same accumulator the per-round allUnits was built from, read
+// once after the loop. (On an early break before any author phase, allUnitsById is empty and lastError
+// is set — readyToCommit is false regardless, so an empty finalUnits on the error path is benign.)
+const finalUnits = [...allUnitsById.values()]
+const lockedContracts = finalUnits.map((u) => ({ id: u.id, intended_behavior: u.intended_behavior, target_file: u.target_file, target_symbol: u.target_symbol, target_stub_path: u.target_stub_path }))
+
 // The no-test-mutation gate diffs against a snapshot. When testSnapshotPath is unset (e.g. the
 // triage fix-mode caller), the CLI's required --snapshot-file is absent and the gate would
 // clap-exit-2; skip it and mark it not-run rather than invoke a degenerate audit (issue #22).
 const audit = testSnapshotPath
-  ? await runGate('verify-no-test-mutation', units, { phaseName: 'Finalize' })
+  ? await runGate('verify-no-test-mutation', finalUnits, { phaseName: 'Finalize' })
   : { skipped: true }
 
-// ready_to_commit incorporates the no-mutation audit verdict (issue #30): a flagged mutation
-// (audit.clean === false) blocks the commit; a skipped/absent/null audit must NOT false-block.
-const auditClean = !audit || audit.clean !== false
+// Fail CLOSED on a requested-but-DROPPED no-mutation audit (issue #53). runGate returns null when the
+// gate-runner produced nothing after its retry budget; with testSnapshotPath SET, that null means the
+// audit was REQUESTED but never ran — it must NOT read as clean (the exact inverse of compileFailure's
+// fail-closed-on-null, issue #46, which the OLD `!audit` clause here violated by swallowing the null as a
+// pass). Record it as a degraded quality phase (degraded gates readyToCommit below); green is real, the
+// audit just didn't run, so it is degraded rather than a hard lastError.
+if (testSnapshotPath && !audit) {
+  degraded.push('no-test-mutation audit was requested (testSnapshotPath set) but the gate-runner returned nothing — cannot confirm the tests were not mutated; refusing to read a dropped audit as clean')
+}
+// auditClean (issue #30 + #53): clean ONLY on an affirmative verdict — a real `clean === true` OR the
+// intentional skip (`skipped === true`, no snapshot). EVERYTHING else fails closed: `clean === false`
+// (flagged mutation), a null-when-REQUESTED audit (dropped gate-runner — also recorded as degraded above),
+// AND a truthy-but-malformed verdict missing the `clean` field (`{}` -> `clean` undefined). The earlier
+// `audit ? audit.clean !== false : false` form still failed OPEN on that last case (`undefined !== false`
+// is `true`); requiring an affirmative `=== true`/`skipped` is the strict fail-closed the #53/#46 hardening
+// intends (Gemini review on PR #57). This is the exact inverse of compileFailure's affirmative-only gate.
+const auditClean = !!audit && (audit.clean === true || audit.skipped === true)
 // ready_to_commit blocks on `degraded` too (issue #37): the --auto-commit path acts on this with NO
 // human in the loop, so an incomplete adversarial review / null synthesis must fail closed. (Fatal
 // false-green-capable failures already set lastError and broke the loop; `degraded` is the "green is
