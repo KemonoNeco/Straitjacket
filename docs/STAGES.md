@@ -114,7 +114,7 @@ Three isolated specialists fan out in parallel → `adversarial-synthesis` dedup
 `post_green` mode only) a capped mutation-runner team runs.
 
 - **args:** `{workUnits, stack, mode, toolingAvailable, repoRoot}`. `mode`: `pre_impl` (emit test additions/strengthenings while RED, no mutation), `post_green` (emit `mutation_runner_tasks` + run the team), `lock` (characterization - dormant).
-- **returns:** `{stage, mode, synthesis, specialist_reports, mutation_results}`.
+- **returns:** `{stage, mode, synthesis, specialist_reports, specialists_expected, specialists_run, mutation_results, mutation_runners_failed}`. `specialists_run < specialists_expected` flags a DROPPED specialist (incomplete validity review — issue #69); `mutation_runners_failed > 0` flags `post_green` mutation-runner agents dropped after their retry budget (advisory undercount — issue #71). The main session surfaces either shortfall as a degraded quality phase rather than reading it as a clean pass.
 - **The diff is never an arg** - specialists Read source + tests themselves.
 - **`post_green` mode is no longer consumed by `tdd`.** Since the post-green pivot, `tdd-cycle`
   inlines only the *pre_impl* pass and drives post-green mutation mechanically (the test-validity

@@ -108,6 +108,12 @@ function specialistPrompt(dim) {
 if (!Array.isArray(workUnits) || !workUnits.length) throw new Error('straitjacket:adversarial — required arg `workUnits` must be a non-empty array')
 if (!mode) throw new Error('straitjacket:adversarial — required arg `mode` is missing (must be "pre_impl" | "post_green" | "lock")')
 
+// The three adversarial lenses are the expected review breadth. `.filter(Boolean)` below drops any
+// specialist that returned null after its retry budget — so the stage MUST surface expected-vs-returned
+// (issue #69), or a 2-of-3 review reads as a complete 3-lens review. Mirrors tdd-cycle.js's inline
+// adversarial() helper (specialistsRun / specialistsExpected). The main session records any shortfall
+// as a DEGRADED quality phase that blocks a clean ready_to_commit.
+const ADVERSARIAL_SPECIALISTS = 3
 phase('Specialists')
 const reports = (await parallel([
   () => agent(specialistPrompt('vacuousness'), { agentType: 'straitjacket:adversarial-vacuousness', schema: SPECIALIST_SCHEMA, phase: 'Specialists', label: 'vacuousness' }),
@@ -116,7 +122,7 @@ const reports = (await parallel([
 ])).filter(Boolean)
 
 phase('Synthesis')
-const synthesis = await agent([
+const synthesis = await Promise.resolve(agent([
   `mode: ${mode}; stack: ${stack}`,
   `Synthesize these three adversarial specialist reports — dedupe overlapping findings, rank by severity. Do NOT re-read source or tests.`,
   `tooling_available: ${JSON.stringify(toolingAvailable)}`,
@@ -126,9 +132,14 @@ const synthesis = await agent([
     ? `This is the POST-GREEN round: emit mutation_runner_tasks for the surviving-mutant hunt.`
     : `This is a PRE-implementation round (no implementation exists yet): emit ranked test additions/strengthenings to apply while still RED; leave mutation_runner_tasks empty.`,
   `Return ONLY JSON matching the adversarial-synthesis output contract.`,
-].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: 'Synthesis', label: 'synthesis' })
+].join('\n'), { agentType: 'straitjacket:adversarial-synthesis', schema: SYNTHESIS_SCHEMA, phase: 'Synthesis', label: 'synthesis' })).catch(() => null)
+// #75: coerce a REJECTED synthesis to null — a bare `await agent(...)` would otherwise propagate the
+// throw and abort the stage with no verdict. A null synthesis is already absorbed below (the mutation
+// block guards on `synthesis &&`) and stays DISTINGUISHABLE in the returned object via the `synthesis`
+// field (null on a drop vs a populated object on a clean run — issue #68's residual is handled by this).
 
 let mutationResults = []
+let mutationRunnersFailed = 0   // #71: count mutation-runner agents dropped by the .filter(Boolean) below, so an undercount can't read as a clean result (mirrors tdd-cycle.js's mutationRunnersFailed; advisory/non-gating)
 if (mode === 'post_green') {
   const tasks = (synthesis && synthesis.mutation_runner_tasks) || []
   const canMutate = toolingAvailable.includes('cargo-mutants') || toolingAvailable.includes('stryker') || toolingAvailable.includes('dotnet-stryker')
@@ -143,7 +154,9 @@ if (mode === 'post_green') {
           `Return surviving mutants as JSON.`,
         ].join('\n'), { agentType: 'straitjacket:mutation-runner', schema: MUTATION_SCHEMA, phase: 'Mutation', label: `mutation:${target}` })
       })
-      mutationResults = mutationResults.concat((await parallel(batch)).filter(Boolean))
+      const returned = (await parallel(batch)).filter(Boolean)
+      mutationRunnersFailed += batch.length - returned.length   // #71: a null-returning runner is dropped here; count it (don't let the undercount pass silently)
+      mutationResults = mutationResults.concat(returned)
     }
   }
 }
@@ -155,5 +168,8 @@ return {
   mode,
   synthesis,
   specialist_reports: reports,
+  specialists_expected: ADVERSARIAL_SPECIALISTS,   // #69: expected lens breadth
+  specialists_run: reports.length,                 // #69: actually-returned — a shortfall (run < expected) is a DEGRADED review, not a pass
   mutation_results: mutationResults,
+  mutation_runners_failed: mutationRunnersFailed,  // #71: dropped post_green runners — surface the undercount instead of swallowing it
 }
