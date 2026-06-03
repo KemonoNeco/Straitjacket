@@ -3,8 +3,10 @@
 // Emitted by `straitjacket workflow-script adversarial` (include_str!'d into the
 // binary) and run via the Workflow tool's inline `script`. Used by:
 //   - straitjacket Phase 4a (lock existing behavior),
-//   - tdd stage C  (pre-impl validity review, on the RED tests),
-//   - tdd stage E  (post-green passing-reason review + mutation).
+//   - the standalone adversarial-validation usage (pre-impl validity review, on the RED tests).
+// NOTE: `tdd-cycle` no longer drives this stage post-green — since the post-green pivot it inlines
+// only the pre_impl pass and runs mutation mechanically (the test-validity re-grade was redundant
+// against locked tests). The `post_green` mode below is retained for the other consumers.
 //
 // SPIKE wf_060d27f3 confirmed: workflow agents honor frontmatter `tools:` (the trio
 // runs Read/Grep/Glob only — diff-blind, Rule 4 safe) but CANNOT spawn sub-agents.
@@ -22,7 +24,7 @@
 
 export const meta = {
   name: 'adversarial-validation',
-  description: 'Adversarial test-validity review: three isolated specialists (vacuousness / happy-path / misalignment) fan out in parallel, then adversarial-synthesis dedupes + ranks; post-green also runs a mutation-runner team. Shared by straitjacket Phase 4a and tdd stages C (pre-impl, on red tests) + E (post-green).',
+  description: 'Adversarial test-validity review: three isolated specialists (vacuousness / happy-path / misalignment) fan out in parallel, then adversarial-synthesis dedupes + ranks; post-green also runs a mutation-runner team. Used by straitjacket Phase 4a and the pre-impl (RED-test) validity review. (tdd-cycle no longer drives this stage post-green — it inlines the pre_impl pass and runs post-green mutation mechanically; post_green mode is retained for the other consumers.)',
   phases: [
     { title: 'Specialists', detail: '3 isolated adversarial specialists in parallel (no diff in scope; they Read source themselves)' },
     { title: 'Synthesis', detail: 'adversarial-synthesis dedupes/ranks the three reports' },
