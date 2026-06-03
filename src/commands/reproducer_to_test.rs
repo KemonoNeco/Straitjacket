@@ -237,7 +237,12 @@ fn append_work_unit(
     let mut existing: Vec<serde_json::Value> = if work_units_file.exists() {
         let text = fs::read_to_string(work_units_file)
             .with_context(|| format!("read {}", work_units_file.display()))?;
-        let parsed: serde_json::Value = serde_json::from_str(&text).with_context(|| {
+        // Strip a single leading UTF-8 BOM (EF BB BF / U+FEFF) before parsing — serde_json
+        // does not treat it as whitespace and would otherwise reject the file with
+        // "expected value at line 1 column 1". Mirrors json_io::read_json_file's idiom.
+        // Only the leading BOM is stripped; malformed remaining bytes still fail to parse.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+        let parsed: serde_json::Value = serde_json::from_str(text).with_context(|| {
             format!(
                 "parse existing work-units file {} (refusing to clobber malformed JSON)",
                 work_units_file.display()
@@ -721,6 +726,285 @@ mod tests {
         assert!(
             ids.contains(&"preexisting-unit-aaaa"),
             "pre-existing unit from the wrapper's inner array must survive the append; got ids: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn test_append_work_unit_reads_bom_prefixed_file_identically_to_bom_free() {
+        // A valid bare-array work-units file whose bytes begin with a UTF-8 BOM (EF BB BF)
+        // must be parsed identically to its BOM-free equivalent: the BOM is stripped, the
+        // pre-existing unit survives, and the new unit is appended (array grows by one).
+        const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
+        let body = "[{\"id\":\"preexisting-bom-id\",\"target_file\":\"x\"}]\n";
+
+        let td = TempDir::new().unwrap();
+
+        // BOM-prefixed file under test.
+        let bom_path = td.path().join("bom-work-units.json");
+        let mut bom_bytes = BOM.to_vec();
+        bom_bytes.extend_from_slice(body.as_bytes());
+        fs::write(&bom_path, &bom_bytes).unwrap();
+
+        // BOM-free reference.
+        let ref_path = td.path().join("ref-work-units.json");
+        fs::write(&ref_path, body.as_bytes()).unwrap();
+
+        let bom_result = append_work_unit(
+            &bom_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "ccc333",
+            5,
+            &td.path().join("t.rs"),
+            "fuzz_repro_ccc333",
+        );
+        assert!(
+            bom_result.is_ok(),
+            "BOM-prefixed valid bare-array file must parse and append; got: {bom_result:?}"
+        );
+
+        let ref_result = append_work_unit(
+            &ref_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "ccc333",
+            5,
+            &td.path().join("t.rs"),
+            "fuzz_repro_ccc333",
+        );
+        assert!(ref_result.is_ok(), "BOM-free reference must succeed; got: {ref_result:?}");
+
+        // Structural equality: parse-succeeds + array length + surviving id.
+        let bom_text = fs::read_to_string(&bom_path).unwrap();
+        let bom_arr: Vec<serde_json::Value> = serde_json::from_str(&bom_text).expect(
+            "BOM file must parse cleanly after append (no 'expected value at line 1 column 1')",
+        );
+        let ref_text = fs::read_to_string(&ref_path).unwrap();
+        let ref_arr: Vec<serde_json::Value> = serde_json::from_str(&ref_text).unwrap();
+
+        assert_eq!(
+            bom_arr.len(),
+            ref_arr.len(),
+            "BOM and BOM-free outcomes must have the same array length"
+        );
+        assert_eq!(bom_arr.len(), 2, "1 pre-existing + 1 appended = 2");
+        let bom_ids: Vec<&str> = bom_arr
+            .iter()
+            .filter_map(|v| v.get("id").and_then(|s| s.as_str()))
+            .collect();
+        assert!(
+            bom_ids.contains(&"preexisting-bom-id"),
+            "pre-existing unit's id must survive the BOM-prefixed append; got: {bom_ids:?}"
+        );
+    }
+
+    #[test]
+    fn test_append_work_unit_rejects_bom_prefixed_malformed_file() {
+        // EF BB BF followed by syntactically-invalid JSON: stripping the BOM is correct, but
+        // the remaining bytes still fail to parse. Must return Err (or at least leave the
+        // sentinel content intact) — it must NOT return Ok and clobber with a clean array.
+        const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+        let malformed_body = "[{not valid json bom_sentinel_unique_string";
+        let mut bytes = BOM.to_vec();
+        bytes.extend_from_slice(malformed_body.as_bytes());
+        fs::write(&wu_path, &bytes).unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "ddd444",
+            7,
+            &td.path().join("t.rs"),
+            "fuzz_repro_ddd444",
+        );
+
+        let after = fs::read_to_string(&wu_path).unwrap_or_default();
+        let silently_clobbered = result.is_ok()
+            && serde_json::from_str::<Vec<serde_json::Value>>(&after)
+                .map(|a| a.len() == 1)
+                .unwrap_or(false)
+            && !after.contains("bom_sentinel_unique_string");
+        assert!(
+            !silently_clobbered,
+            "BOM + malformed must not silently clobber: result={result:?}, file after=\n{after}"
+        );
+    }
+
+    #[test]
+    fn test_append_work_unit_accepts_bom_prefixed_wrapper_object_shape() {
+        // A BOM-prefixed orchestrator wrapper object {"work_units":[...], "scope_summary":...}.
+        // The BOM must be stripped, the inner array extracted via parse_work_units_array, the
+        // pre-existing entry preserved, and the new unit appended — identically to the
+        // BOM-free wrapper case.
+        const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+
+        let wrapper = serde_json::json!({
+            "work_units": [
+                {
+                    "id": "preexisting-bom-wrapper-id",
+                    "target_file": "src/old.rs",
+                    "target_symbol": "old::sym",
+                    "status": "written"
+                }
+            ],
+            "scope_summary": "wrapper-level metadata from coverage-reviewer"
+        });
+        let mut bytes = BOM.to_vec();
+        bytes.extend_from_slice(serde_json::to_string_pretty(&wrapper).unwrap().as_bytes());
+        fs::write(&wu_path, &bytes).unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "eee555",
+            42,
+            &td.path().join("t.rs"),
+            "fuzz_repro_eee555",
+        );
+        assert!(
+            result.is_ok(),
+            "BOM-prefixed wrapper-shape work-units.json must be accepted; got: {result:?}"
+        );
+
+        let after_text = fs::read_to_string(&wu_path).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&after_text).unwrap();
+        let after_arr = after
+            .as_array()
+            .expect("after append, file should be a bare array");
+        assert_eq!(
+            after_arr.len(),
+            2,
+            "wrapper inner array's 1 entry + 1 appended = 2; got: {after_arr:?}"
+        );
+        let ids: Vec<&str> = after_arr
+            .iter()
+            .filter_map(|v| v.get("id").and_then(|s| s.as_str()))
+            .collect();
+        assert!(
+            ids.contains(&"preexisting-bom-wrapper-id"),
+            "pre-existing unit from the BOM-prefixed wrapper's inner array must survive; got ids: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn test_r2_p0() {
+        // Wrapper object whose inner work_units array is EMPTY: {"work_units": [], ...}.
+        // append_work_unit must extract the empty inner array, append only the new unit, and
+        // write a bare array of length exactly 1 (the empty-collection boundary of the
+        // wrapper-extraction path).
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+
+        let empty_wrapper = serde_json::json!({
+            "work_units": [],
+            "scope_summary": "wrapper-level metadata, no pre-existing units"
+        });
+        fs::write(
+            &wu_path,
+            serde_json::to_string_pretty(&empty_wrapper).unwrap(),
+        )
+        .unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "p00000",
+            42,
+            &td.path().join("t.rs"),
+            "fuzz_repro_p00000",
+        );
+        assert!(
+            result.is_ok(),
+            "append_work_unit must accept an empty-inner-array wrapper; got: {result:?}"
+        );
+
+        let after_text = fs::read_to_string(&wu_path).unwrap();
+        let after: serde_json::Value = serde_json::from_str(&after_text).unwrap();
+        let after_arr = after
+            .as_array()
+            .expect("after append, file should be a bare array");
+        assert_eq!(
+            after_arr.len(),
+            1,
+            "empty inner array + 1 appended = 1; got: {after_arr:?}"
+        );
+        assert_eq!(
+            after_arr[0]["source_of_unit"], "fuzz_runner",
+            "the sole entry must be the newly appended fuzz_runner unit"
+        );
+    }
+
+    #[test]
+    fn test_r2_p1() {
+        // Bytes EF BB BF EF BB BF followed by an otherwise-valid bare JSON array. Only the
+        // SINGLE leading BOM is stripped; the residual second BOM is not whitespace and fails
+        // to parse. Must return Err and must not silently clobber the existing content.
+        const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+        let body = "[{\"id\":\"double_bom_sentinel_unique_string\",\"target_file\":\"x\"}]";
+        let mut bytes = BOM.to_vec();
+        bytes.extend_from_slice(BOM);
+        bytes.extend_from_slice(body.as_bytes());
+        fs::write(&wu_path, &bytes).unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "p11111",
+            7,
+            &td.path().join("t.rs"),
+            "fuzz_repro_p11111",
+        );
+        assert!(
+            result.is_err(),
+            "double-BOM file must fail to parse (residual second BOM); got: {result:?}"
+        );
+        let after = fs::read_to_string(&wu_path).unwrap_or_default();
+        assert!(
+            after.contains("double_bom_sentinel_unique_string"),
+            "original sentinel content must remain on disk (no silent overwrite); file after:\n{after}"
+        );
+    }
+
+    #[test]
+    fn test_r2_p2() {
+        // BOM-only file: bytes EF BB BF with zero remaining bytes after the BOM is stripped.
+        // The empty string fails serde_json parse → Err. Must not silently create a fresh
+        // single-element array.
+        const BOM: &[u8] = &[0xef, 0xbb, 0xbf];
+        let td = TempDir::new().unwrap();
+        let wu_path = td.path().join("work-units.json");
+        fs::write(&wu_path, BOM).unwrap();
+
+        let result = append_work_unit(
+            &wu_path,
+            "src/parser.rs",
+            "parser::parse_header",
+            "p22222",
+            7,
+            &td.path().join("t.rs"),
+            "fuzz_repro_p22222",
+        );
+        assert!(
+            result.is_err(),
+            "BOM-only file (empty after strip) must fail to parse; got: {result:?}"
+        );
+        let after = fs::read_to_string(&wu_path).unwrap_or_default();
+        let clobbered_to_single = serde_json::from_str::<Vec<serde_json::Value>>(&after)
+            .map(|a| a.len() == 1)
+            .unwrap_or(false);
+        assert!(
+            !clobbered_to_single,
+            "BOM-only file must not be overwritten with a clean single-element array; file after:\n{after}"
         );
     }
 }
