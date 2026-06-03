@@ -670,13 +670,14 @@ const audit = testSnapshotPath
 if (testSnapshotPath && !audit) {
   degraded.push('no-test-mutation audit was requested (testSnapshotPath set) but the gate-runner returned nothing — cannot confirm the tests were not mutated; refusing to read a dropped audit as clean')
 }
-// auditClean (issue #30 + #53): a real verdict with clean===false blocks; the intentional skip
-// ({skipped:true}, no snapshot) is clean and does not block; a null-when-REQUESTED is NOT clean (handled
-// as degraded above and forced false here, so it can never slip through). The fast-path no longer treats
-// `!audit` as clean — that was the #53 fail-open. The else-branch (audit falsy) is reachable ONLY when
-// audit===null, which `runGate` returns ONLY when testSnapshotPath was truthy (the skip branch yields the
-// truthy {skipped:true}) — i.e. a requested-but-dropped audit, which is never clean, so it is a flat false.
-const auditClean = audit ? audit.clean !== false : false
+// auditClean (issue #30 + #53): clean ONLY on an affirmative verdict — a real `clean === true` OR the
+// intentional skip (`skipped === true`, no snapshot). EVERYTHING else fails closed: `clean === false`
+// (flagged mutation), a null-when-REQUESTED audit (dropped gate-runner — also recorded as degraded above),
+// AND a truthy-but-malformed verdict missing the `clean` field (`{}` -> `clean` undefined). The earlier
+// `audit ? audit.clean !== false : false` form still failed OPEN on that last case (`undefined !== false`
+// is `true`); requiring an affirmative `=== true`/`skipped` is the strict fail-closed the #53/#46 hardening
+// intends (Gemini review on PR #57). This is the exact inverse of compileFailure's affirmative-only gate.
+const auditClean = !!audit && (audit.clean === true || audit.skipped === true)
 // ready_to_commit blocks on `degraded` too (issue #37): the --auto-commit path acts on this with NO
 // human in the loop, so an incomplete adversarial review / null synthesis must fail closed. (Fatal
 // false-green-capable failures already set lastError and broke the loop; `degraded` is the "green is
