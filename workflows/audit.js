@@ -122,10 +122,16 @@ function dispatch(prompt, opts) {
   if (!_canBoundAgents) return p   // no sandbox timer → degrade to a plain await (pre-#67 behavior; no worse than before)
   let timer
   const guard = new Promise((resolve) => { timer = setTimeout(() => resolve(null), AGENT_TIMEOUT_MS) })
-  return Promise.race([p, guard]).then((res) => {
-    if (typeof clearTimeout === 'function') clearTimeout(timer)   // cancel the pending timer on the agent-wins path so it can't keep the run open
-    return res
-  })
+  return Promise.race([p, guard]).then(
+    (res) => {
+      if (typeof clearTimeout === 'function') clearTimeout(timer)   // agent resolved (or timed out → null): cancel the pending timer so it can't keep the run open
+      return res
+    },
+    (err) => {
+      if (typeof clearTimeout === 'function') clearTimeout(timer)   // agent REJECTED: still clear the timer (a single-arg .then would skip this and leave it dangling), then re-throw to PRESERVE current propagation — the reject→null hardening is a distinct cross-cutting concern, deferred to #75
+      throw err
+    },
+  )
 }
 
 // ---- Mechanical: one audit-runner per tool, cap 3 (the plugin's mechanical-team cap) ----
