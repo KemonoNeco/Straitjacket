@@ -231,7 +231,16 @@ async function runGate(gate, units, { expect, phaseName } = {}) {
     `work_units (write this to work_units_path verbatim, then run the command):`,
     JSON.stringify({ work_units: units }, null, 2),
   ].filter(Boolean).join('\n'), { agentType: 'straitjacket:gate-runner', schema: GATE_SCHEMA, phase: phaseName, label: gate })
-  return (res && res.cli_result) || null
+  // The gate-runner relays cli_result as the CLI's stdout JSON. "Verbatim" + the permissive GATE_SCHEMA
+  // (cli_result typed {} i.e. ANY) means it commonly arrives as a JSON STRING, not a parsed object, and
+  // property access on a string (verdict.all_passed, red.nothing_to_run, per_unit_results) is undefined,
+  // so EVERY gate then fail-closes deterministically (issue: cli_result-string). Parse a stringified
+  // cli_result back into an object; a non-JSON string degrades to null (treated as "no verdict" downstream).
+  let cli = res && res.cli_result
+  if (typeof cli === 'string') {
+    try { cli = JSON.parse(cli) } catch (e) { cli = null }
+  }
+  return cli || null
 }
 
 function authorPrompt(units) {
@@ -333,7 +342,12 @@ function bail(error) {
 }
 
 // (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
-if (!spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
+if (mode !== 'target' && !spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
+// Validate `mode` against its enum LOUDLY (straitjacket:audit finding; mirrors the `kind` guard below). The
+// destructure default (`mode = 'spec'`) only fills `undefined`, so a defined-but-typo'd mode (e.g. "targett")
+// would silently route to the spec/greenfield branch (every `mode === 'target'` test is false) — a silent
+// mis-run, the asymmetry the audit flagged vs the loud kind guard. Fail fast on an unknown mode.
+if (mode !== 'spec' && mode !== 'target') throw new Error(`straitjacket:tdd-cycle — unknown mode '${mode}' (expected 'spec' or 'target')`)
 
 // ---- the cycle -----------------------------------------------------------------------
 
@@ -488,7 +502,22 @@ while (round < maxRounds && units.length) {
   // must never be silently accepted (issue #20): surface each and fail this round loudly. (The
   // engine already classifies these 'rejected_lint'; only the JS used to compute-then-drop them.)
   const vacuous = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'vacuous_pre_impl')
-  if (vacuous.length) {
+  if (mode === 'target') {
+    // FIX MODE (issue: fix-mode red-check vacuity): the source-under-test already EXISTS, so an edge-case
+    // / guard unit can LEGITIMATELY pass at red -- it asserts behavior the buggy code already satisfies
+    // (e.g. a "malformed input still errors" guard, where the current bug ALSO errors, for the wrong
+    // reason). A pre-impl PASS is therefore NOT proof of vacuity here, unlike SPEC mode below (unimplemented
+    // stub). The real fix-mode invariant is that the bug was REPRODUCED: at least one unit RedOk, else no
+    // authored test pins the defect and the fix is unverifiable (fail loudly). Passing units are surfaced as
+    // a NON-blocking advisory and the round proceeds -- true vacuity is still caught by adversarial-vacuousness
+    // (it reads the assertion, not just pass/fail), and every unit is re-gated --expect pass at GreenCheck.
+    const redOk = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'red_ok')
+    if (!redOk.length) {
+      lastError = `fix-mode red-check reproduced nothing: every authored test passed against the buggy source, so none pins the defect -- the fix would be unverifiable. Re-author at least one test that FAILS against the current bug.`
+      break
+    }
+    if (vacuous.length) log(`fix-mode: ${vacuous.length} test(s) passed at red against the current source -- kept as guards for already-correct adjacent behavior, NOT bug reproducers (adversarial-vacuousness judges true vacuity): ${vacuous.map((u) => u.work_unit_id).join(', ')}`)
+  } else if (vacuous.length) {
     for (const vu of vacuous) {
       const wu = units.find((u) => u.id === vu.work_unit_id)
       surfacedBugs.push({
@@ -624,12 +653,13 @@ while (round < maxRounds && units.length) {
 
   // The in-workflow iterate loop is retired together with the post-green synthesis that drove it
   // (proposals + unresolved findings were both sourced from the now-removed post_green adversarial
-  // pass). Hardening — surviving mutants + source-audit findings → fix-mode tdd-cycle for behavior
-  // gaps, refactor-under-green for quality — is now SESSION-owned, because it needs the savepoint/git
-  // to commit each accepted improvement or revert a green-breaking refactor. This cycle therefore makes
-  // ONE honest red → green → mutation savepoint pass and returns; surviving_mutants ride out in the
-  // result for the session to lift. (The cumulative-allUnits machinery + every fail-closed gate stay
-  // intact, defensively; in a single pass allUnits == units.)
+  // pass — including main's #66/#61 fix-mode-iterate + post-green-strengthening hardening, which is
+  // MOOT here because there is no in-workflow iterate left to harden). Hardening — surviving mutants +
+  // source-audit findings → fix-mode tdd-cycle for behavior gaps, refactor-under-green for quality — is
+  // now SESSION-owned, because it needs the savepoint/git to commit each accepted improvement or revert
+  // a green-breaking refactor. This cycle makes ONE honest red → green → mutation savepoint pass and
+  // returns; surviving_mutants ride out in the result for the session to lift. (The cumulative-allUnits
+  // machinery + every fail-closed gate stay intact, defensively; in a single pass allUnits == units.)
   break
 }
 
