@@ -36,8 +36,19 @@ export const meta = {
 // message, not a raw TypeError — #58). Genuine non-object / CLI-string still fails loudly — NARROWS #36,
 // does not remove it. Routed through a local `cfg`, NOT a reassignment of the injected `args` global.
 let cfg = args
-let _argParseErr = ''   // when args is a string that fails JSON.parse, carry the reason into the guard message
-if (typeof cfg === 'string') { try { const _p = JSON.parse(cfg); if (_p && typeof _p === 'object' && !Array.isArray(_p)) cfg = _p } catch (e) { _argParseErr = ` (looks like a string but is not parseable JSON: ${e && e.message})` } }
+let _argParseErr = ''   // when args is a string that doesn't yield a plain object, carry the reason into the guard message
+if (typeof cfg === 'string') {
+  try {
+    const _p = JSON.parse(cfg)
+    if (_p && typeof _p === 'object' && !Array.isArray(_p)) {
+      cfg = _p
+    } else {
+      _argParseErr = ` (parsed as ${_p === null ? 'null' : (Array.isArray(_p) ? 'Array' : typeof _p)} but expected a plain object)`
+    }
+  } catch (e) {
+    _argParseErr = ` (looks like a string but is not parseable JSON: ${e && e.message})`
+  }
+}
 if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) {
   throw new Error(`straitjacket:adversarial — args must be a plain object, got ${cfg === null ? 'null' : (Array.isArray(cfg) ? 'Array' : typeof cfg)}${_argParseErr}; pass { workUnits, stack, mode, ... } not a CLI string`)
 }
