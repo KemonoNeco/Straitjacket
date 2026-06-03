@@ -17,7 +17,7 @@ One rule decides where each piece of work lives:
 | Shape | Substrate | Examples |
 |---|---|---|
 | Gateless multi-agent fan-out | **Workflow stage** (`workflows/*.js`) | `fanout`, `adversarial`, `audit` |
-| Single agent, no fan-out | **Direct `Agent` dispatch** (not a stage) | `coverage-reviewer`, `fuzz-harness-author`, `root-cause-analyst` |
+| Single agent, no fan-out | **Direct `Agent` dispatch** (or inlined as a single-agent phase inside a workflow) | `coverage-reviewer`, `fuzz-harness-author`, `root-cause-analyst` |
 | Needs a user gate / owns state | **Main session** (the skill) | red/green gates, savepoint commit, the single-writer `work-units.json` merge, ledger writes |
 | Intra-turn iterate-with-tools | **A single agent that loops internally** | `root-cause-analyst` |
 
@@ -55,9 +55,11 @@ pass `model:` - each agent's frontmatter locks its tier and tool list. Tool rest
 ## Dispatch convention - workflow-first, with Agent fallback
 
 The deterministic fan-out phases run as **dynamic-Workflow stages** when the `Workflow` tool is
-available, and fall back to direct `Agent` dispatch when it is not. Single agents (e.g.
-`coverage-reviewer`) and every merge/checkpoint stay in the main session - a workflow cannot
-pause, so each fan-out stage is its own invocation and the session regains control between them.
+available, and fall back to direct `Agent` dispatch when it is not. Every merge/checkpoint stays
+in the main session, and single agents are dispatched directly from it - **except** where a
+workflow inlines a single agent as one of its own phases (e.g. `tdd-cycle` runs `coverage-reviewer`
+as its Coverage phase). A workflow cannot pause, so each *fan-out* stage is its own invocation and
+the session regains control between them.
 
 **Capability check:** inspect your own available tools for one named `Workflow`.
 
@@ -114,9 +116,10 @@ mechanical + corroborated findings bypass it.
 
 ## Coverage modes - the `coverage-reviewer`'s three entry points
 
-`coverage-reviewer` is the source of truth for "what should be tested." It runs as a **single
-direct `Agent` dispatch** (never a stage) and writes a list of work units with **immutable**
-`intended_behavior` strings.
+`coverage-reviewer` is the source of truth for "what should be tested." It is always a **single
+agent, never fanned out** - dispatched directly from the main session in standalone runs and the
+Agent-fallback path, or inlined as the Coverage phase inside the `tdd-cycle` workflow - and writes
+a list of work units with **immutable** `intended_behavior` strings.
 
 ### `diff` mode (retained-dormant - the characterization path)
 

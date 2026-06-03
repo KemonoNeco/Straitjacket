@@ -36,35 +36,34 @@ regression-tests-plugin/
 ├── .claude-plugin/         (1) Marketplace + plugin metadata
 │   ├── marketplace.json
 │   └── plugin.json
-├── skills/                 (2) Skill orchestrator playbook
-│   └── regression/SKILL.md
-├── agents/                 (3) Ten specialist agent definitions
-│   ├── coverage-reviewer.md
-│   ├── unit-test-author.md
-│   ├── integration-test-author.md
-│   ├── adversarial-vacuousness.md
-│   ├── adversarial-happy-path.md
-│   ├── adversarial-misalignment.md
-│   ├── adversarial-synthesis.md
-│   ├── mutation-runner.md
-│   ├── fuzz-harness-author.md
-│   └── fuzz-runner.md
+├── skills/                 (2) Skill orchestrator playbooks (7 skills)
+│   ├── tdd/SKILL.md             audit/SKILL.md         mutation/SKILL.md
+│   ├── fuzz/SKILL.md            debug/SKILL.md         triage/SKILL.md
+│   └── report-bug/SKILL.md
+├── agents/                 (3) 23 specialist agent definitions
+│   ├── coverage-reviewer.md  unit-test-author.md  integration-test-author.md
+│   ├── implementation-author.md
+│   ├── adversarial-{vacuousness,happy-path,misalignment,synthesis}.md
+│   ├── audit-{latent-bug,security,concurrency,error-handling,dead-code,doc-drift,performance}.md
+│   ├── audit-{runner,refuter,synthesis}.md
+│   ├── mutation-runner.md  fuzz-harness-author.md  fuzz-runner.md
+│   └── gate-runner.md  root-cause-analyst.md
 ├── hooks/                  (4) Three Claude Code hook bindings
 │   └── hooks.json
 ├── bin/straitjacket      (5a) sh launcher → straitjacket-<triple>
 │   ├── straitjacket.cmd        Windows launcher (PATHEXT-resolved)
 │   └── straitjacket-<triple>[.exe]  Per-platform binaries (committed, ~3MB each)
-├── src/                    (5b) Helper-binary source (10 subcommands)
+├── src/                    (5b) Helper-binary source (17 subcommands)
 │   ├── main.rs
 │   ├── lib.rs
-│   ├── commands/*.rs       (10 files - one per subcommand)
-│   └── common/*.rs         (walk, subprocess, json_io)
+│   ├── commands/*.rs       (17 files - one per subcommand)
+│   └── common/*.rs         (cargo_target, json_io, subprocess, walk)
 └── schemas/work-unit.schema.json   The orchestrator ↔ author contract
 ```
 
 The **primary output** is (1) + (2) + (3) + (4) - the skill + agents + hooks that orchestrate Claude Code subagents. The Rust crate (5a/5b) is the *deterministic helper* that the skill shells out to for everything an LLM should not be doing (parsing test output, walking directories, hashing files, killing process trees, etc.).
 
-> A TDD skill (`skills/tdd/`) and an `implementation-author` agent previously shipped alongside the regression skill. They have been temporarily removed and will be reimplemented later. Some Rust helpers (`run-new-tests`, the `implementation-author` arm in `decide_post_agent`) and schema fields (`target_stub_path`) remain in place as scaffolding for that reimplementation.
+> The TDD skill (`skills/tdd/`) and the `implementation-author` agent now ship as part of the decomposition refactor: the `tdd-cycle` workflow drives the test-first loop and `implementation-author` fills stubs (green phase) or fixes buggy source (fix mode), never editing tests. The `run-new-tests` helper, the `implementation-author` arm in `decide_post_agent`, and the `target_stub_path` schema field back that flow.
 
 ## The five-layer architecture
 
@@ -83,10 +82,10 @@ flowchart TB
 
 | Layer | Lives in | Role |
 |---|---|---|
-| 1 - Rust CLI | `bin/straitjacket` (launcher → `straitjacket-<triple>`) | 10 subcommands |
-| 2 - Shared infra | `src/common/` | walk, subprocess, json_io |
-| 3 - Specialist agents | `agents/*.md` | 10 agents |
-| 4 - Skill orchestrator | `skills/regression/SKILL.md` | main Claude session |
+| 1 - Rust CLI | `bin/straitjacket` (launcher → `straitjacket-<triple>`) | 17 subcommands |
+| 2 - Shared infra | `src/common/` | cargo_target, json_io, subprocess, walk |
+| 3 - Specialist agents | `agents/*.md` | 23 agents |
+| 4 - Skill orchestrators | `skills/*/SKILL.md` (7 skills) | main Claude session |
 | 5 - Hooks | `hooks/hooks.json` | 3 events |
 
 **Cardinal rule per layer** (each layer has exactly one):
@@ -126,7 +125,7 @@ Per-phase detail:
 
 ## Agent dispatch graph
 
-Ten specialist agents, three model tiers, three concurrency patterns. Fan-out by phase:
+The full roster is **23 specialist agents** (see [`docs/STAGES.md`](STAGES.md#specialist-agent-roster) for the complete tool/model inventory). The graph below shows the original test-authoring core — three model tiers, three concurrency patterns — fanned out by phase:
 
 ```mermaid
 flowchart TD
@@ -192,12 +191,18 @@ straitjacket <subcommand> [options]
   preflight                 detect-stack + baseline-check + lint-check
   baseline-check            cargo test --workspace / dotnet test
   lint-check                cargo check + clippy / dotnet build + format
+  verify-tree-clean         assert a clean/green working tree (green-baseline gate)
   snapshot-tests            SHA-256 every test file → test-snapshot.json
   verify-no-test-mutation   re-hash against a snapshot, report drift
   verify-new-tests-compile  cargo check / dotnet build for new test files
+  run-new-tests             run the new tests N times, classify per-unit
+  validate-work-units       schema-check a work-units.json payload
   fuzz-setup                probe cargo-fuzz / SharpFuzz, list candidates
   reproducer-to-test        crash artifact → deterministic regression test
-  run-new-tests             run the new tests N times, classify per-unit
+  audit-run                 run one mechanical audit tool → normalized findings
+  verify-surfaced-bugs-captured  assert confirmed defects were filed to the ledger
+  bug-status                set a bug record's status in the ledger (+ optional note)
+  workflow-script <stage>   emit a dynamic-Workflow stage script to stdout
   hook <event>              stdin JSON → hook decision (preflight |
                             pre-adversarial | post-agent)
 ```
@@ -208,7 +213,7 @@ straitjacket <subcommand> [options]
 2. One or more `pub fn` *pure-data helpers* (e.g., `detect_stack(repo_root: &Path)`, `parse_rust_failing_tests(output: &str)`) returning typed results. These get unit tests.
 3. A `pub fn run(args: Args) -> anyhow::Result<()>` shell that calls the helpers, serializes the result to pretty JSON, prints to stdout, and sets the exit code.
 
-The split is enforced by testability: a `run(args)` that bakes I/O + parsing + JSON together is untestable. Pulling helpers out means the deterministic logic is covered by 145 unit tests; the `run()` glue is a one-liner.
+The split is enforced by testability: a `run(args)` that bakes I/O + parsing + JSON together is untestable. Pulling helpers out means the deterministic logic is covered by 267 unit tests; the `run()` glue is a one-liner.
 
 ## Run-state file lifecycle
 
@@ -264,7 +269,7 @@ WorkUnit
 
 ## Test isolation invariants
 
-`cargo test --lib` runs 145 tests in ~3 seconds. Three test-isolation invariants must be preserved when adding tests:
+`cargo test --lib` runs 267 tests in ~3 seconds (on Windows; a couple are `#[cfg(windows)]`-gated, so the Linux/macOS count is slightly lower). Three test-isolation invariants must be preserved when adding tests:
 
 **1. No shared mutable env vars across tests.** `cargo test` runs in parallel threads of the same process. The `sets_msbuild_env_var_on_child_only_not_parent` test in `subprocess.rs` works *only* because no other test mutates `MSBUILDDISABLENODEREUSE` directly. If you need to add an env-touching test, add `serial_test` as a dev-dependency and annotate.
 
