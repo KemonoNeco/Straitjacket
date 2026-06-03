@@ -101,13 +101,40 @@ function chunk(arr, size) {
 if (!auditScope || (Array.isArray(auditScope) && !auditScope.length)) throw new Error('straitjacket:audit — required arg `auditScope` is missing or empty')
 if (!Array.isArray(lenses) || !lenses.length) throw new Error('straitjacket:audit — required arg `lenses` must be a non-empty array')
 
+// ---- Per-agent dispatch with a bounded hang-guard (issue #67) ----
+// parallel() awaits EVERY thunk, and a bare `await agent(...)` awaits one; if a single agent() HANGS
+// (its promise never settles — distinct from a null RETURN, which #40 already records as failed:true
+// coverage), that await never resolves and the whole stage stalls with NO verdict emitted. The only
+// way to escape an await on a non-settling promise is a timer race — there is no timer-free remedy.
+// The workflow sandbox's setTimeout is UNDOCUMENTED (empirically present — probe wf_c7368357 — but
+// not sanctioned by the Claude Code docs), so this ARMS the race only when setTimeout is actually a
+// function and otherwise returns the bare agent() promise: a future runtime that drops the timer
+// degrades to the pre-#67 (vulnerable-but-no-worse) behavior instead of throwing. A timed-out agent
+// resolves to null — the exact shape every call site already accounts for (#40) — so Refute/Synthesis
+// still run and emit a DEGRADED verdict rather than the run hanging forever. Resume-safe: on resume a
+// completed agent() returns its cached result instantly and wins the race before the timer fires; only
+// a never-settling agent (which has no cached result to replay) can reach the timeout, so the journal
+// stays consistent. The agent-wins path clearTimeout()s the loser so a pending timer can't hold the run open.
+const AGENT_TIMEOUT_MS = 20 * 60 * 1000   // 20 min — far longer than any healthy lens/runner/refuter/synthesis agent; only a genuine hang trips it
+const _canBoundAgents = typeof setTimeout === 'function'
+function dispatch(prompt, opts) {
+  const p = agent(prompt, opts)
+  if (!_canBoundAgents) return p   // no sandbox timer → degrade to a plain await (pre-#67 behavior; no worse than before)
+  let timer
+  const guard = new Promise((resolve) => { timer = setTimeout(() => resolve(null), AGENT_TIMEOUT_MS) })
+  return Promise.race([p, guard]).then((res) => {
+    if (typeof clearTimeout === 'function') clearTimeout(timer)   // cancel the pending timer on the agent-wins path so it can't keep the run open
+    return res
+  })
+}
+
 // ---- Mechanical: one audit-runner per tool, cap 3 (the plugin's mechanical-team cap) ----
 phase('Mechanical')
 let mechanicalFindings = []
 const mechanicalCoverage = []
 for (const wave of chunk(mechanicalTools, 3)) {
   const r = await parallel(wave.map((tool) => () =>
-    agent([
+    dispatch([
       `You are the audit-runner. Run exactly one mechanical static-analysis tool and return its JSON verbatim.`,
       `tool: ${tool}`, `stack: ${stack}`, `repo_root: ${repoRoot}`,
       `Run: straitjacket audit-run --tool ${tool} --stack ${stack} --repo-root ${repoRoot}`,
@@ -136,7 +163,7 @@ let llmFindings = []
 const lensCoverage = []
 for (const wave of chunk(lenses, 6)) {
   const r = await parallel(wave.map((lens) => () =>
-    agent([
+    dispatch([
       `mode: audit; stack: ${stack}`,
       `You are the audit-${lens} lens. Apply ONLY your lens. Operate in isolation.`,
       `audit_scope (READ these yourself; you have Read/Grep/Glob):`, JSON.stringify(auditScope, null, 2),
@@ -175,7 +202,7 @@ if (llmFindings.length) {
   const claimsOnly = llmFindings.map((f) => ({ lens: f.lens, severity: f.severity, title: f.title, summary: f.summary, expected: f.expected, actual: f.actual, suspect_files: f.suspect_files, suspect_symbol: f.suspect_symbol, file: f.file, line: f.line, evidence: f.evidence }))
   refutersDispatched = Math.min(skeptics, 3)
   const votes = await parallel(Array.from({ length: refutersDispatched }, (_unused, k) => () =>
-    agent([
+    dispatch([
       `You are an audit-refuter (skeptic #${k + 1}). For EACH finding below, vote refute / survive / uncertain.`,
       `DEFAULT to refute when you cannot independently confirm the claim by reading the cited source — this audit drops the unconfirmable.`,
       `You see each finding's claim + evidence + source ONLY (not the finder's private reasoning). READ the cited files yourself.`,
@@ -188,7 +215,7 @@ if (llmFindings.length) {
 
 // ---- Synthesis: dedupe/rank survivors + mechanical; corroborate; assign disposition ----
 phase('Synthesis')
-const synthesis = await agent([
+const synthesis = await dispatch([
   `mode: audit; stack: ${stack}`,
   `Synthesize this audit. Inputs: the LLM findings, the refuter votes over them, and the mechanical findings.`,
   // Quorum (issue #42): keep an LLM finding only on a STRICT MAJORITY of the DISPATCHED skeptic pool —
