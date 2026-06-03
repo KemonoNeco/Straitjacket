@@ -644,7 +644,15 @@ while (round < maxRounds && units.length) {
   // findings. Gate the iterate on a remaining round; the cap-exhausted AND the no-proposals cases fall
   // through to the unresolved-findings guard below so neither silently drops open findings.
   const wantsAnotherRound = !!((roundMutants.length || unresolved.length) && proposals.length)
-  if (wantsAnotherRound && round < maxRounds) {
+  // bug-2026-06-03-05: the iterate-into-a-new-round model is GREENFIELD-only. In target/fix mode the
+  // round-1 fix is already in the source, so any post-green strengthening (proposal- OR mutation-driven)
+  // asserts CORRECT behavior and PASSES against the fixed source -- it can never be RedOk, so materializing
+  // it into a round-2 RedCheck trips the fix-mode >=1-red_ok guard and aborts a VERIFIED fix with a
+  // misleading 'reproduced nothing' error. A fix run targets ONE defect (round-1 red->green IS the
+  // verification); adjacent concerns are SURFACED (post_green_strengthenings, below), never auto-iterated.
+  // So gate iteration on spec mode; target mode always falls through to surface + the honest unresolved-
+  // findings degraded check (which still blocks ready_to_commit on a real open finding -- no silent green).
+  if (wantsAnotherRound && round < maxRounds && mode !== 'target') {
     // Materialize each synthesis proposal into a SCHEMA-COMPLETE WorkUnit before the next round
     // (issue #19): a proposal carries only target_file/target_symbol/kind/intended_behavior, but the
     // gates collect ONLY status=='written' units and reconcile by id — so feeding raw proposals
@@ -654,8 +662,12 @@ while (round < maxRounds && units.length) {
     const materialized = []
     for (let i = 0; i < proposals.length; i += 1) {
       const p = proposals[i] || {}
-      if (!p.target_file || !p.intended_behavior || String(p.intended_behavior).length < 10) {
-        lastError = `iterate: synthesis proposal #${i} lacks a usable target_file/intended_behavior — refusing to feed a partial proposal into round ${round + 1}`
+      // bug-2026-06-03-04: also require target_symbol + target_stub_path. Absent, the materialized unit
+      // defaults them onto target_file (below) -- aiming the unimplemented!() stub at the SOURCE-UNDER-TEST
+      // and defaulting a symbol to a file PATH, collapsing test/stub/source with no loud failure. Fail loudly
+      // like the badKind guard. (output_file_path === target_file stays fine for inline Rust tests.)
+      if (!p.target_file || !p.target_symbol || !p.intended_behavior || String(p.intended_behavior).length < 10 || !p.target_stub_path) {
+        lastError = `iterate: synthesis proposal #${i} lacks a usable target_file / target_symbol / intended_behavior / target_stub_path -- refusing to feed a partial proposal (which would alias the stub + symbol onto target_file) into round ${round + 1}`
         break
       }
       materialized.push({
