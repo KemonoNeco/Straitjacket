@@ -201,7 +201,7 @@ straitjacket <subcommand> [options]
   reproducer-to-test        crash artifact → deterministic regression test
   audit-run                 run one mechanical audit tool → normalized findings
   verify-surfaced-bugs-captured  assert confirmed defects were filed to the ledger
-  bug-status                read/update a bug record's status in the ledger
+  bug-status                set a bug record's status in the ledger (+ optional note)
   workflow-script <stage>   emit a dynamic-Workflow stage script to stdout
   hook <event>              stdin JSON → hook decision (preflight |
                             pre-adversarial | post-agent)
@@ -269,7 +269,7 @@ WorkUnit
 
 ## Test isolation invariants
 
-`cargo test --lib` runs 267 tests in ~3 seconds. Three test-isolation invariants must be preserved when adding tests:
+`cargo test --lib` runs 267 tests in ~3 seconds (on Windows; a couple are `#[cfg(windows)]`-gated, so the Linux/macOS count is slightly lower). Three test-isolation invariants must be preserved when adding tests:
 
 **1. No shared mutable env vars across tests.** `cargo test` runs in parallel threads of the same process. The `sets_msbuild_env_var_on_child_only_not_parent` test in `subprocess.rs` works *only* because no other test mutates `MSBUILDDISABLENODEREUSE` directly. If you need to add an env-touching test, add `serial_test` as a dev-dependency and annotate.
 
