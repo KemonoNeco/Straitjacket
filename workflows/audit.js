@@ -88,8 +88,12 @@ const SYNTH_SCHEMA = {
 }
 
 function chunk(arr, size) {
+  // Clamp size to a positive integer (straitjacket:audit finding; parity with tdd-cycle.js chunk(), issue
+  // #31): a non-positive / NaN / stringified size would spin forever (i += 0) or yield an empty fan-out.
+  // Call sites pass literals (3, 6) today, so this is defensive parity, not a live fix.
+  const n = Math.max(1, Math.floor(Number(size)) || 1)
   const out = []
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n))
   return out
 }
 
@@ -151,7 +155,7 @@ for (const wave of chunk(lenses, 6)) {
     const res = r[j]
     if (res) {
       lensCoverage.push({ lens: res.lens || lens, count: (res.findings || []).length, nothing_scanned: res.nothing_scanned, failed: false })
-      llmFindings = llmFindings.concat((res.findings || []).map((f) => ({ ...f, source: f.source || 'llm' })))
+      llmFindings = llmFindings.concat((res.findings || []).filter((f) => f && typeof f === 'object').map((f) => ({ ...f, source: f.source || 'llm' })))  // straitjacket:audit finding: a schema-valid {findings:[null]} would TypeError on f.source and abort the whole stage; guard non-object elements (mirrors tdd-cycle.js unit guard)
     } else {
       lensCoverage.push({ lens, count: 0, nothing_scanned: true, failed: true })
     }

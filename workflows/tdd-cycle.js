@@ -339,6 +339,11 @@ function bail(error) {
 
 // (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
 if (mode !== 'target' && !spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
+// Validate `mode` against its enum LOUDLY (straitjacket:audit finding; mirrors the `kind` guard below). The
+// destructure default (`mode = 'spec'`) only fills `undefined`, so a defined-but-typo'd mode (e.g. "targett")
+// would silently route to the spec/greenfield branch (every `mode === 'target'` test is false) — a silent
+// mis-run, the asymmetry the audit flagged vs the loud kind guard. Fail fast on an unknown mode.
+if (mode !== 'spec' && mode !== 'target') throw new Error(`straitjacket:tdd-cycle — unknown mode '${mode}' (expected 'spec' or 'target')`)
 
 // ---- the cycle -----------------------------------------------------------------------
 
