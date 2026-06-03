@@ -228,7 +228,16 @@ async function runGate(gate, units, { expect, phaseName } = {}) {
     `work_units (write this to work_units_path verbatim, then run the command):`,
     JSON.stringify({ work_units: units }, null, 2),
   ].filter(Boolean).join('\n'), { agentType: 'straitjacket:gate-runner', schema: GATE_SCHEMA, phase: phaseName, label: gate })
-  return (res && res.cli_result) || null
+  // The gate-runner relays cli_result as the CLI's stdout JSON. "Verbatim" + the permissive GATE_SCHEMA
+  // (cli_result typed {} i.e. ANY) means it commonly arrives as a JSON STRING, not a parsed object, and
+  // property access on a string (verdict.all_passed, red.nothing_to_run, per_unit_results) is undefined,
+  // so EVERY gate then fail-closes deterministically (issue: cli_result-string). Parse a stringified
+  // cli_result back into an object; a non-JSON string degrades to null (treated as "no verdict" downstream).
+  let cli = res && res.cli_result
+  if (typeof cli === 'string') {
+    try { cli = JSON.parse(cli) } catch (e) { cli = null }
+  }
+  return cli || null
 }
 
 function authorPrompt(units) {
@@ -323,13 +332,13 @@ async function fanout(units, kindPredicate, cap, promptFn, agentType, phaseName)
 function bail(error) {
   return {
     stage: 'tdd-cycle', rounds_run: 0, error,
-    degraded: [], locked_contracts: [], surfaced_bugs: [], pre_impl_strengthenings: [], dropped_impl: [],
+    degraded: [], locked_contracts: [], surfaced_bugs: [], pre_impl_strengthenings: [], post_green_strengthenings: [], dropped_impl: [],
     surviving_mutants: [], mutation_runners_failed: 0, no_mutation_audit: null, ready_to_commit: false,
   }
 }
 
 // (the args-shape guard now runs above, BEFORE the destructure, on the normalized `cfg` — issues #54 + #58.)
-if (!spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
+if (mode !== 'target' && !spec) throw new Error('straitjacket:tdd-cycle — required arg `spec` is missing or empty')
 
 // ---- the cycle -----------------------------------------------------------------------
 
@@ -394,6 +403,7 @@ const degraded = []                  // issue #37: non-fatal agent-phase failure
                                      // human in the loop). Distinct from lastError, which is for false-green-capable
                                      // (untested-behavior-reaching-commit) failures that break the loop.
 const preImplStrengthenings = []     // issue #38: pre-impl adversarial proposals, SURFACED (not authored).
+const postGreenStrengthenings = []   // issue #61: post-green proposals NOT carried into a further round, SURFACED.
 const droppedImpl = []               // issue #47: units an implementation-author chunk produced NO result for
                                      // (null after its retry budget). DIAGNOSTIC-ONLY + NON-gating: GreenCheck
                                      // already fails closed on an unimplemented stub (its test runs and fails),
@@ -481,7 +491,22 @@ while (round < maxRounds && units.length) {
   // must never be silently accepted (issue #20): surface each and fail this round loudly. (The
   // engine already classifies these 'rejected_lint'; only the JS used to compute-then-drop them.)
   const vacuous = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'vacuous_pre_impl')
-  if (vacuous.length) {
+  if (mode === 'target') {
+    // FIX MODE (issue: fix-mode red-check vacuity): the source-under-test already EXISTS, so an edge-case
+    // / guard unit can LEGITIMATELY pass at red -- it asserts behavior the buggy code already satisfies
+    // (e.g. a "malformed input still errors" guard, where the current bug ALSO errors, for the wrong
+    // reason). A pre-impl PASS is therefore NOT proof of vacuity here, unlike SPEC mode below (unimplemented
+    // stub). The real fix-mode invariant is that the bug was REPRODUCED: at least one unit RedOk, else no
+    // authored test pins the defect and the fix is unverifiable (fail loudly). Passing units are surfaced as
+    // a NON-blocking advisory and the round proceeds -- true vacuity is still caught by adversarial-vacuousness
+    // (it reads the assertion, not just pass/fail), and every unit is re-gated --expect pass at GreenCheck.
+    const redOk = (red.per_unit_results || []).filter(Boolean).filter((u) => u.classification === 'red_ok')
+    if (!redOk.length) {
+      lastError = `fix-mode red-check reproduced nothing: every authored test passed against the buggy source, so none pins the defect -- the fix would be unverifiable. Re-author at least one test that FAILS against the current bug.`
+      break
+    }
+    if (vacuous.length) log(`fix-mode: ${vacuous.length} test(s) passed at red against the current source -- kept as guards for already-correct adjacent behavior, NOT bug reproducers (adversarial-vacuousness judges true vacuity): ${vacuous.map((u) => u.work_unit_id).join(', ')}`)
+  } else if (vacuous.length) {
     for (const vu of vacuous) {
       const wu = units.find((u) => u.id === vu.work_unit_id)
       surfacedBugs.push({
@@ -665,6 +690,12 @@ while (round < maxRounds && units.length) {
     const titles = unresolved.map((f) => f.title || f.summary || '(untitled finding)').slice(0, 8).join('; ')
     degraded.push(`post-green left ${unresolved.length} unresolved high/medium finding(s) that will not be re-authored/re-gated — ${why}: ${titles}${unresolved.length > 8 ? ' …' : ''}`)
   }
+  // issue #61: surface post-green proposals NOT carried into a further gated round. Reached only on the
+  // non-iterating fall-through (no round wanted, OR the maxRounds cap exhausted) -- the iterate branch above
+  // consumes proposals into next-round units and continues, so this never double-counts an iterated proposal.
+  // Without this they vanished (neither materialized into a next round nor returned). Mirror
+  // pre_impl_strengthenings: surfaced + NON-blocking, so the main session can lift any into a follow-up run.
+  postGreenStrengthenings.push(...proposals.map((p) => ({ ...p, round })))
   break
 }
 
@@ -716,6 +747,7 @@ return {
   locked_contracts: lockedContracts,         // surfaced NON-BLOCKING in the summary (contract-review removed)
   surfaced_bugs: surfacedBugs,               // main session: park-vs-fix + report-bug
   pre_impl_strengthenings: preImplStrengthenings,  // issue #38: proposed test strengthenings, SURFACED (not authored)
+  post_green_strengthenings: postGreenStrengthenings,  // issue #61: post-green proposals not carried into a round, SURFACED
   dropped_impl: droppedImpl,                 // issue #47: units a dropped implementation-author left unimplemented (diagnostic, NON-gating)
   surviving_mutants: survivingMutants,
   mutation_runners_failed: mutationRunnersFailed,  // issue #37: dropped mutation-runner agents (NON-gating, advisory)

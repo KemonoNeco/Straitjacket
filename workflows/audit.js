@@ -66,12 +66,15 @@ const skeptics = Math.max(1, parseInt(cfg.skeptics, 10) || 3)
 const RUNNER_SCHEMA = {
   type: 'object', additionalProperties: true,
   properties: { tool: { type: 'string' }, available: { type: 'boolean' }, nothing_scanned: { type: 'boolean' }, findings: { type: 'array' } },
-  required: ['findings'],
+  // issue #59: REQUIRE nothing_scanned. A relay that omits it then fails validation (null -> the failed:true
+  // coverage branch) instead of passing as {findings:[]} and being coerced to a fail-open "scanned" entry that
+  // bypasses the #49 zero-scan floor. Lets audit.js distinguish ran-clean from didn't-run.
+  required: ['findings', 'nothing_scanned'],
 }
 const LENS_SCHEMA = {
   type: 'object', additionalProperties: true,
   properties: { lens: { type: 'string' }, findings: { type: 'array' }, nothing_scanned: { type: 'boolean' }, isolation_check: { type: 'object' } },
-  required: ['findings'],
+  required: ['findings', 'nothing_scanned'],   // issue #59: REQUIRE nothing_scanned (see RUNNER_SCHEMA above)
 }
 const REFUTER_SCHEMA = {
   type: 'object', additionalProperties: true,
@@ -115,7 +118,7 @@ for (const wave of chunk(mechanicalTools, 3)) {
   wave.forEach((tool, j) => {
     const res = r[j]
     if (res) {
-      mechanicalCoverage.push({ tool: res.tool || tool, count: (res.findings || []).length, available: res.available !== false, nothing_scanned: !!res.nothing_scanned, failed: false })
+      mechanicalCoverage.push({ tool: res.tool || tool, count: (res.findings || []).length, available: res.available !== false, nothing_scanned: res.nothing_scanned, failed: false })
       mechanicalFindings = mechanicalFindings.concat((res.findings || []).map((f) => ({ ...f, source: 'mechanical' })))
     } else {
       mechanicalCoverage.push({ tool, count: 0, available: false, nothing_scanned: true, failed: true })
@@ -147,7 +150,7 @@ for (const wave of chunk(lenses, 6)) {
   wave.forEach((lens, j) => {
     const res = r[j]
     if (res) {
-      lensCoverage.push({ lens: res.lens || lens, count: (res.findings || []).length, nothing_scanned: !!res.nothing_scanned, failed: false })
+      lensCoverage.push({ lens: res.lens || lens, count: (res.findings || []).length, nothing_scanned: res.nothing_scanned, failed: false })
       llmFindings = llmFindings.concat((res.findings || []).map((f) => ({ ...f, source: f.source || 'llm' })))
     } else {
       lensCoverage.push({ lens, count: 0, nothing_scanned: true, failed: true })
