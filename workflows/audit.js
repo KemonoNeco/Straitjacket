@@ -128,8 +128,8 @@ function dispatch(prompt, opts) {
       return res
     },
     (err) => {
-      if (typeof clearTimeout === 'function') clearTimeout(timer)   // agent REJECTED: still clear the timer (a single-arg .then would skip this and leave it dangling), then re-throw to PRESERVE current propagation — the reject→null hardening is a distinct cross-cutting concern, deferred to #75
-      throw err
+      if (typeof clearTimeout === 'function') clearTimeout(timer)   // agent REJECTED: clear the timer, then COERCE the rejection to null (#75) — the same shape a null RETURN (#40) and a hang/timeout (#67) already resolve to. A bare `await dispatch(...)` would otherwise propagate the throw and abort the whole stage with no terminal verdict; null instead lands in the existing degraded-verdict path (Refute/Synthesis still run, synthesis_status floors to 'degraded'). Harmless to the parallel()-wrapped callers — parallel passes a null through identically to a thrown-thunk coercion.
+      return null
     },
   )
 }

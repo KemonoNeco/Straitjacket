@@ -89,6 +89,15 @@ const {
   quick = false,
 } = cfg
 
+// Coerce a REJECTED agent() promise to null (#75). parallel() already null-coerces a throwing thunk,
+// but a BARE `await agent(...)` at a synthesis / gate / precondition node has no such catch: a reject
+// propagates out of the await and aborts the whole stage with NO terminal verdict. Routing every bare
+// site through safeAgent() lands a rejection in the SAME null shape the existing fail-closed handling
+// already absorbs (bail() / break+lastError / degraded.push), so one agent throw can't kill the cycle.
+// (Workflow scripts can't import one another, so each stage defines its own — audit.js does it inside
+// dispatch(); adversarial.js inlines a .catch at its single site.)
+const safeAgent = (...a) => Promise.resolve(agent(...a)).catch(() => null)
+
 // Sanitize the numeric caps — do NOT destructure-default them (Gemini review on PR #50). A destructure
 // default only fills `undefined`, so a null / 0 / negative / non-numeric `maxRounds` flows straight into
 // `while (round < maxRounds && units.length)` below, where `round(0) < null` / `< "x"` is false on the
@@ -219,7 +228,7 @@ function compileFailure(verdict, label) {
 
 // Run one CLI gate through the gate-runner agent; returns its parsed cli_result (or null).
 async function runGate(gate, units, { expect, phaseName } = {}) {
-  const res = await agent([
+  const res = await safeAgent([
     `You are the gate-runner. Run the straitjacket gate and return its JSON verdict verbatim.`,
     `gate: ${gate}`,
     `repo_root: ${repoRoot}`,
@@ -291,7 +300,7 @@ async function adversarial(units) {
     () => agent(specialistPrompt('misalignment', units), { agentType: 'straitjacket:adversarial-misalignment', schema: SPECIALIST_SCHEMA, phase: 'PreAdversarial', label: 'misalignment' }),
   ])).filter(Boolean)
 
-  const synthesis = await agent([
+  const synthesis = await safeAgent([
     `mode: pre_impl; stack: ${stack}`,
     `Synthesize these three adversarial specialist reports — dedupe, rank by severity. Do NOT re-read source.`,
     `tooling_available: ${JSON.stringify(toolingAvailable)}`,
@@ -383,7 +392,7 @@ const coveragePromptLines = (mode === 'target')
       `Specification:`, spec,
       `Read schemas/work-unit.schema.json. Return ONLY JSON: {"work_units":[...], "scope_summary": "..."}.`,
     ]
-const coverage = await agent(coveragePromptLines.join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
+const coverage = await safeAgent(coveragePromptLines.join('\n'), { agentType: 'straitjacket:coverage-reviewer', schema: COVERAGE_SCHEMA, phase: 'Coverage', label: 'coverage-reviewer' })
 // Distinguish a NULL agent return (the coverage-reviewer produced nothing after its retry budget)
 // from a successfully-empty plan (issue #37): both currently collapse to units=[] and the generic
 // "produced no work units" error, but only the latter is a real coverage verdict. Fail loudly and
