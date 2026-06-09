@@ -262,4 +262,7 @@ All per-run artifacts live under `<repo>/.straitjacket/<run_id>/` (run_id =
 (the audit skill's transient findings - distinct from `work-units.json`). The **bug ledger** at
 `<repo>/.straitjacket/bugs.json` is **tracked/committed** — a top-level file under `.straitjacket/`
 intentionally outside the `*/` glob — the durable hand-off between `report-bug`, `audit`,
-`triage`, and a later fix-mode run.
+`triage`, and a later fix-mode run. `report-bug` both **captures** to this ledger (one bug, fast,
+local-first) and, in **publish mode**, bulk-publishes its findings to a team tracker (GitHub
+engineering-bug template for mechanical fixes / Jira triage-decision template for design findings,
+with parent/child grouping) — closing the capture→publish loop alongside `audit`/`triage`.
