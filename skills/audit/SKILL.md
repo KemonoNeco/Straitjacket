@@ -98,6 +98,11 @@ the audit's done-path — do **not** present the Final summary until it passes:
 - **Dropped** (refuted count) + **`nothing_scanned`** tools (loud, not silent).
 - **Known-limitation note**: "LLM lenses are advisory and false-positive-prone; survivors passed a
   skeptic refute quorum but are not proof. Mechanical findings are as reliable as their tool."
+- **Publish next step** (offer, non-blocking): once the confirmed defects are in the ledger, point
+  the user at **`straitjacket:report-bug` publish mode** to bulk-publish them to a team tracker —
+  the GitHub engineering-bug template for mechanical fixes, the Jira triage/decision template for
+  design findings (secrets, auth model, missing spec), with parent/child grouping for recurring
+  defect classes. Audit only *captures* to the ledger; publishing is a separate, user-confirmed step.
 
 ## Notes
 
